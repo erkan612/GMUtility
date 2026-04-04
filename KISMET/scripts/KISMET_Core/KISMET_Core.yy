@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"KISMET_Core",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"KISMET_Core",
+  "parent":{
+    "name":"KISMET",
+    "path":"folders/KISMET.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}
