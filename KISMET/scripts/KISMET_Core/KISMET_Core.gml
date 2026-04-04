@@ -2654,6 +2654,442 @@ function KISMET() constructor {
 	    Expand = function(amt) { x-=amt; y-=amt; w+=amt*2; h+=amt*2; return self; };
 	    Clone = function() { return new Rect(x,y,w,h); };
 	};
+	
+	// State Machine
+	function StateMachine(_initial_state) constructor {
+	    states = ds_map_create_kismet();
+	    current = _initial_state;
+	    previous = undefined;
+	    changed = false;
+    
+	    AddState = function(_name, _on_enter, _on_update, _on_exit) {
+	        states[? _name] = {
+	            enter: _on_enter,
+	            update: _on_update,
+	            exit: _on_exit
+	        };
+	        return self;
+	    };
+    
+	    ChangeTo = function(_new_state, _data = undefined) {
+	        if (!ds_map_exists(states, _new_state)) {
+	            show_debug_message("[StateMachine] Unknown state: " + string(_new_state));
+	            return self;
+	        }
+        
+	        if (current != undefined && ds_map_exists(states, current)) {
+	            var exit_fn = states[? current].exit;
+	            if (exit_fn != undefined) exit_fn(_data);
+	        }
+        
+	        previous = current;
+	        current = _new_state;
+	        changed = true;
+        
+	        var enter_fn = states[? current].enter;
+	        if (enter_fn != undefined) enter_fn(_data);
+        
+	        return self;
+	    };
+    
+	    Update = function(_delta = 1/60) {
+	        changed = false;
+	        if (current != undefined && ds_map_exists(states, current)) {
+	            var update_fn = states[? current].update;
+	            if (update_fn != undefined) update_fn(_delta);
+	        }
+	        return self;
+	    };
+    
+	    Serialize = function() {
+	        return {
+	            current: current,
+	            previous: previous,
+	            state_names: ds_map_keys_to_array(states)
+	        };
+	    };
+    
+	    Deserialize = function(_data) {
+	        if (_data.current != undefined) current = _data.current;
+	        if (_data.previous != undefined) previous = _data.previous;
+	        return self;
+	    };
+    
+	    Visualize = function() {
+	        show_debug_message("=== State Machine ===");
+	        show_debug_message("Current: " + string(current));
+	        show_debug_message("Previous: " + string(previous));
+	        show_debug_message("Registered states: " + string(ds_map_keys_to_array(states)));
+	        return self;
+	    };
+		
+		toString = function() {
+			Visualize();
+		};
+    
+	    Free = function() {
+	        ds_map_destroy_kismet(states);
+	    };
+	}
+	
+	function AchievementManager() constructor {
+	    achievements = ds_map_create_kismet();  // id -> {name, progress, goal, unlocked, hidden}
+	    callbacks = ds_map_create_kismet();     // id -> on_unlock callback
+	    unlocked_count = 0;
+    
+	    Add = function(_id, _name, _goal = 1, _hidden = false, _on_unlock = undefined) {
+	        achievements[? _id] = {
+	            name: _name,
+	            progress: 0,
+	            goal: _goal,
+	            unlocked: false,
+	            hidden: _hidden,
+	            unlocked_at: undefined
+	        };
+        
+	        if (_on_unlock != undefined) {
+	            callbacks[? _id] = _on_unlock;
+	        }
+	        return self;
+	    };
+    
+	    Progress = function(_id, _amount = 1) {
+	        if (!ds_map_exists(achievements, _id)) return self;
+	        var ach = achievements[? _id];
+	        if (ach.unlocked) return self;
+        
+	        ach.progress = min(ach.progress + _amount, ach.goal);
+        
+	        if (ach.progress >= ach.goal) {
+	            Unlock(_id);
+	        }
+	        return self;
+	    };
+    
+	    Unlock = function(_id) {
+	        if (!ds_map_exists(achievements, _id)) return self;
+	        var ach = achievements[? _id];
+	        if (ach.unlocked) return self;
+        
+	        ach.unlocked = true;
+	        ach.unlocked_at = current_time;
+	        unlocked_count++;
+        
+	        if (!ach.hidden) {
+	            show_debug_message("[Achievemnt Manager] Achievement Unlocked: " + ach.name);
+	            // might do ui trigger here ?
+	        }
+        
+	        if (ds_map_exists(callbacks, _id)) {
+	            callbacks[? _id](_id);
+	        }
+        
+	        return self;
+	    };
+    
+	    IsUnlocked = function(_id) {
+	        return ds_map_exists(achievements, _id) ? achievements[? _id].unlocked : false;
+	    };
+    
+	    GetProgress = function(_id) {
+	        if (!ds_map_exists(achievements, _id)) return 0;
+	        var ach = achievements[? _id];
+	        return ach.goal > 0 ? ach.progress / ach.goal : 0;
+	    };
+    
+	    GetAll = function() {
+	        var result = {};
+	        var keys = ds_map_keys_to_array(achievements);
+	        for (var i = 0; i < array_length(keys); i++) {
+	            var _id = keys[i];
+	            var ach = achievements[? _id];
+	            result[$ _id] = {
+	                progress: ach.progress,
+	                unlocked: ach.unlocked,
+	                unlocked_at: ach.unlocked_at
+	            };
+	        }
+	        return result;
+	    };
+    
+	    LoadFromSave = function(_save_data) {
+	        var keys = variable_struct_get_names(_save_data);
+	        for (var i = 0; i < array_length(keys); i++) {
+	            var _id = keys[i];
+	            if (ds_map_exists(achievements, _id)) {
+	                var saved = _save_data[$ _id];
+	                achievements[? _id].progress = saved.progress;
+	                achievements[? _id].unlocked = saved.unlocked;
+	                achievements[? _id].unlocked_at = saved.unlocked_at;
+	                if (saved.unlocked) unlocked_count++;
+	            }
+	        }
+	        return self;
+	    };
+    
+	    Reset = function() {
+	        var keys = ds_map_keys_to_array(achievements);
+	        for (var i = 0; i < array_length(keys); i++) {
+	            var ach = achievements[? keys[i]];
+	            ach.progress = 0;
+	            ach.unlocked = false;
+	            ach.unlocked_at = undefined;
+	        }
+	        unlocked_count = 0;
+	        return self;
+	    };
+    
+	    GetStats = function() {
+	        return {
+	            total: ds_map_size(achievements),
+	            unlocked: unlocked_count,
+	            percent: unlocked_count / max(1, ds_map_size(achievements))
+	        };
+	    };
+    
+	    Free = function() {
+	        ds_map_destroy_kismet(achievements);
+	        ds_map_destroy_kismet(callbacks);
+	    };
+	}
+	
+	// SaveManager (simplified)
+	function SaveManager() constructor {
+	    slots = 10;
+	    current_slot = 0;
+	    auto_save_enabled = false;
+	    auto_save_timer = 0;
+	    auto_save_interval = 300; // seconds
+    
+	    Save = function(_slot, _data, _thumbnail = undefined) { // Simple save
+	        var save_data = {
+	            version: KISMET_VERSION,
+	            timestamp: GetUnixDateTime(date_current_datetime()),
+	            data: _data,
+	            thumbnail: _thumbnail,
+	            checksum: "" // simple checksum
+	        };
+        
+	        save_data.checksum = string_hash(json_stringify(_data)); // simple checksum (just for validation)
+        
+	        var file_name = "save_slot_" + string(_slot) + ".kismet";
+	        var success = File.SaveJSON(file_name, save_data);
+        
+	        if (success && IS_KISMET_DEBUG_ENABLED()) {
+	            show_debug_message("[Save] Slot " + string(_slot) + " saved");
+	        }
+        
+	        return success;
+	    };
+    
+	    // Simple load
+	    Load = function(_slot) {
+	        var file_name = "save_slot_" + string(_slot) + ".kismet";
+	        var save_data = File.LoadJSON(file_name);
+        
+	        if (save_data == undefined) return undefined;
+        
+	        // Verify checksum
+	        var expected = string_hash(json_stringify(save_data.data));
+	        if (save_data.checksum != expected) {
+	            show_debug_message("[Save] Corrupted save slot " + string(_slot));
+	            return undefined;
+	        }
+        
+	        current_slot = _slot;
+	        return save_data.data;
+	    };
+    
+	    Exists = function(_slot) {
+	        var file_name = "save_slot_" + string(_slot) + ".kismet";
+	        return file_exists(file_name);
+	    };
+    
+	    Delete = function(_slot) {
+	        var file_name = "save_slot_" + string(_slot) + ".kismet";
+	        if (file_exists(file_name)) {
+	            file_delete(file_name);
+	            return true;
+	        }
+	        return false;
+	    };
+    
+	    GetSaveList = function() {
+	        var saves = [];
+	        for (var i = 0; i < slots; i++) {
+	            if (Exists(i)) {
+	                var file_name = "save_slot_" + string(i) + ".kismet";
+	                var data = File.LoadJSON(file_name);
+	                if (data != undefined) {
+	                    array_push(saves, {
+	                        slot: i,
+	                        timestamp: data.timestamp,
+	                        has_thumbnail: data.thumbnail != undefined
+	                    });
+	                }
+	            }
+	        }
+	        return saves;
+	    };
+    
+	    // Auto-save (call in Step event)
+	    UpdateAutoSave = function(_delta, _get_data_function) {
+	        if (!auto_save_enabled) return;
+        
+	        auto_save_timer += _delta;
+	        if (auto_save_timer >= auto_save_interval) {
+	            auto_save_timer = 0;
+	            if (_get_data_function != undefined) {
+	                var data = _get_data_function();
+	                Save(current_slot, data);
+	            }
+	        }
+	    };
+    
+	    EnableAutoSave = function(_interval_seconds = 300) {
+	        auto_save_enabled = true;
+	        auto_save_interval = _interval_seconds;
+	        auto_save_timer = 0;
+	        return self;
+	    };
+    
+	    DisableAutoSave = function() {
+	        auto_save_enabled = false;
+	        return self;
+	    };
+	}
+	
+	// Profiler
+	function Profiler() constructor {
+	    markers = ds_map_create_kismet();     // name -> {total_time, call_count, min, max, samples}
+	    current_marker = undefined;
+	    start_time = 0;
+	    enabled = true;
+    
+	    Begin = function(_name) {
+	        if (!enabled) return self;
+        
+	        if (ds_map_exists(markers, _name)) {
+	            current_marker = markers[? _name];
+	        } else {
+	            current_marker = {
+	                total_time: 0,
+	                call_count: 0,
+	                min_time: Infinity,
+	                max_time: 0,
+	                samples: ds_list_create_kismet(),
+	                name: _name
+	            };
+	            markers[? _name] = current_marker;
+	        }
+        
+	        current_marker.call_count++;
+	        start_time = current_time;
+	        return self;
+	    };
+    
+	    End = function() {
+	        if (!enabled || current_marker == undefined) return self;
+        
+	        var elapsed = (current_time - start_time) / 1000.0; // milliseconds
+	        current_marker.total_time += elapsed;
+        
+	        if (elapsed < current_marker.min_time) current_marker.min_time = elapsed;
+	        if (elapsed > current_marker.max_time) current_marker.max_time = elapsed;
+        
+	        // Keep last 60 samples for average
+	        if (ds_list_size(current_marker.samples) >= 60) {
+	            ds_list_delete(current_marker.samples, 0);
+	        }
+	        ds_list_add(current_marker.samples, elapsed);
+        
+	        current_marker = undefined;
+	        return self;
+	    };
+    
+	    GetData = function() {
+	        var result = {};
+	        var keys = ds_map_keys_to_array(markers);
+        
+	        for (var i = 0; i < array_length(keys); i++) {
+	            var m = markers[? keys[i]];
+            
+	            // Calculate average from samples
+	            var avg = 0;
+	            for (var j = 0; j < ds_list_size(m.samples); j++) {
+	                avg += m.samples[| j];
+	            }
+	            avg = avg / max(1, ds_list_size(m.samples));
+            
+	            result[$ m.name] = {
+	                total_ms: m.total_time,
+	                calls: m.call_count,
+	                avg_ms: avg,
+	                min_ms: m.min_time,
+	                max_ms: m.max_time,
+	                percent: 0 // Calculate after
+	            };
+	        }
+        
+	        // Calculate percentages
+	        var total_time = 0;
+	        keys = ds_map_keys_to_array(markers);
+	        for (var i = 0; i < array_length(keys); i++) {
+	            total_time += result[$ keys[i]].total_ms;
+	        }
+        
+	        for (var i = 0; i < array_length(keys); i++) {
+	            result[$ keys[i]].percent = (result[$ keys[i]].total_ms / total_time) * 100;
+	        }
+        
+	        return result;
+	    };
+    
+	    GetReport = function() {
+	        var data = GetData();
+	        var keys = variable_struct_get_names(data);
+        
+	        // Sort by total time (descending)
+	        for (var i = 0; i < array_length(keys) - 1; i++) {
+	            for (var j = i + 1; j < array_length(keys); j++) {
+	                if (data[$ keys[i]].total_ms < data[$ keys[j]].total_ms) {
+	                    var temp = keys[i];
+	                    keys[i] = keys[j];
+	                    keys[j] = temp;
+	                }
+	            }
+	        }
+        
+	        var report = "=== Performance Profile ===\n";
+	        for (var i = 0; i < array_length(keys); i++) {
+	            var d = data[$ keys[i]];
+	            report += string(keys[i]) + ": " + string(d.total_ms) + "ms (" + string(d.percent) + "%) - Avg: " + string(d.avg_ms) + "ms, Calls: " + string(d.calls) + "\n";
+	        }
+        
+	        return report;
+	    };
+    
+	    Reset = function() {
+	        var keys = ds_map_keys_to_array(markers);
+	        for (var i = 0; i < array_length(keys); i++) {
+	            var m = markers[? keys[i]];
+	            ds_list_destroy_kismet(m.samples);
+	        }
+	        ds_map_clear(markers);
+	        current_marker = undefined;
+	        return self;
+	    };
+    
+	    SetEnabled = function(_enabled) {
+	        enabled = _enabled;
+	        return self;
+	    };
+    
+	    Free = function() {
+	        Reset();
+	        ds_map_destroy_kismet(markers);
+	    };
+	}
 
 	//  File Helpers & JSON
 	File = {
