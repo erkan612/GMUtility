@@ -28,7 +28,7 @@
 *   					 ██║  ██╗██║███████║██║ ╚═╝ ██║███████╗   ██║   		             *
 *   					 ╚═╝  ╚═╝╚═╝╚══════╝╚═╝     ╚═╝╚══════╝   ╚═╝   		             *
 *   							Utility framework for GameMaker								 *
-*   						             Version 1.0.0										 *
+*   						             Version 1.0.2										 *
 *   																                         *
 *   						              by erkan612					                     *
 *   					 ***********************************************                     *
@@ -37,7 +37,7 @@
 
 // KISMET NAMESPACE
 #macro KISMET_NAMESPACE_INIT				globalvar MemoryTracker; MemoryTracker = new MemoryTracker(); globalvar KISMET; KISMET = new KISMET
-#macro KISMET_VERSION						"1.0.0"
+#macro KISMET_VERSION						"1.0.1"
 
 // CMD Macros
 #macro CMD_PAUSE							KISMET.DefaultCommandManager.Push(KISMET_COMMAND.GAME_PAUSE)
@@ -743,17 +743,17 @@ enum KISMET_PLAYER_UI_AND_INPUT_FLAGS {
     CONSOLE_OPEN							= 1 << 20,
 }											
 enum KISMET_PLAYER_SPECIAL_ABILITY_FLAGS {	
-    CAN_STEALTH								= 1 << 21,
-    IS_STEALTHED							= 1 << 22,
-    CAN_DETECT_HIDDEN						= 1 << 23,
-    IS_DETECTING							= 1 << 24,
-    CAN_DOUBLE_JUMP_AIR						= 1 << 25,
-    CAN_WALL_RUN							= 1 << 26,
-    IS_WALL_RUNNING							= 1 << 27,
-    CAN_SLOW_TIME							= 1 << 28,
-    TIME_SLOWED_ACTIVE						= 1 << 29,
-    CAN_STOP_TIME							= 1 << 30,
-    TIME_STOPPED_ACTIVE						= 1 << 31
+    CAN_STEALTH								= 1 << 0,
+    IS_STEALTHED							= 1 << 1,
+    CAN_DETECT_HIDDEN						= 1 << 2,
+    IS_DETECTING							= 1 << 3,
+    CAN_DOUBLE_JUMP_AIR						= 1 << 4,
+    CAN_WALL_RUN							= 1 << 5,
+    IS_WALL_RUNNING							= 1 << 6,
+    CAN_SLOW_TIME							= 1 << 7,
+    TIME_SLOWED_ACTIVE						= 1 << 8,
+    CAN_STOP_TIME							= 1 << 9,
+    TIME_STOPPED_ACTIVE						= 1 << 10
 }
 
 enum KISMET_INPUT_DEVICE {
@@ -2724,7 +2724,7 @@ function KISMET() constructor {
 	    };
 		
 		toString = function() {
-			Visualize();
+			return $"State Machine: Current: {string(current)}, Previous: {string(previous)}, Registered states: {string(ds_map_keys_to_array(states))}";
 		};
     
 	    Free = function() {
