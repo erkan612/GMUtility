@@ -1,6 +1,6 @@
 {
   "$GMProject":"v1",
-  "%Name":"KISMET",
+  "%Name":"GMUtility",
   "AudioGroups":[
     {"$GMAudioGroup":"v1","%Name":"audiogroup_default","exportDir":"","name":"audiogroup_default","resourceType":"GMAudioGroup","resourceVersion":"2.0","targets":-1,},
   ],
@@ -19,11 +19,19 @@
   "MetaData":{
     "IDEVersion":"2024.14.4.222",
   },
-  "name":"KISMET",
+  "name":"GMUtility",
   "resources":[
     {"id":{"name":"oTest","path":"objects/oTest/oTest.yy",},},
     {"id":{"name":"rTest","path":"rooms/rTest/rTest.yy",},},
-    {"id":{"name":"KISMET_Core","path":"scripts/KISMET_Core/KISMET_Core.yy",},},
+    {"id":{"name":"GMU_Command","path":"scripts/GMU_Command/GMU_Command.yy",},},
+    {"id":{"name":"GMU_Core","path":"scripts/GMU_Core/GMU_Core.yy",},},
+    {"id":{"name":"GMU_DS","path":"scripts/GMU_DS/GMU_DS.yy",},},
+    {"id":{"name":"GMU_Game","path":"scripts/GMU_Game/GMU_Game.yy",},},
+    {"id":{"name":"GMU_Input","path":"scripts/GMU_Input/GMU_Input.yy",},},
+    {"id":{"name":"GMU_Misc","path":"scripts/GMU_Misc/GMU_Misc.yy",},},
+    {"id":{"name":"GMU_Procedural","path":"scripts/GMU_Procedural/GMU_Procedural.yy",},},
+    {"id":{"name":"GMU_Rendering","path":"scripts/GMU_Rendering/GMU_Rendering.yy",},},
+    {"id":{"name":"GMU_State","path":"scripts/GMU_State/GMU_State.yy",},},
   ],
   "resourceType":"GMProject",
   "resourceVersion":"2.0",

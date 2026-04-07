@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"GMU_Procedural",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"GMU_Procedural",
+  "parent":{
+    "name":"KISMET",
+    "path":"folders/KISMET.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}

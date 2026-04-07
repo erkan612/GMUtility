@@ -17,8 +17,8 @@
   ],
   "name":"rTest",
   "parent":{
-    "name":"KISMET",
-    "path":"KISMET.yyp",
+    "name":"GMUtility",
+    "path":"GMUtility.yyp",
   },
   "parentRoom":null,
   "physicsSettings":{

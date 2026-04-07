@@ -1,9 +1,9 @@
 {
   "$GMScript":"v1",
-  "%Name":"KISMET_Core",
+  "%Name":"GMU_Rendering",
   "isCompatibility":false,
   "isDnD":false,
-  "name":"KISMET_Core",
+  "name":"GMU_Rendering",
   "parent":{
     "name":"KISMET",
     "path":"folders/KISMET.yy",
