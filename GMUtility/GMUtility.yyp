@@ -11,6 +11,7 @@
   "defaultScriptType":1,
   "Folders":[
     {"$GMFolder":"","%Name":"KISMET","folderPath":"folders/KISMET.yy","name":"KISMET","resourceType":"GMFolder","resourceVersion":"2.0",},
+    {"$GMFolder":"","%Name":"Test","folderPath":"folders/Test.yy","name":"Test","resourceType":"GMFolder","resourceVersion":"2.0",},
   ],
   "ForcedPrefabProjectReferences":[],
   "IncludedFiles":[],
@@ -21,6 +22,8 @@
   },
   "name":"GMUtility",
   "resources":[
+    {"id":{"name":"oBlock","path":"objects/oBlock/oBlock.yy",},},
+    {"id":{"name":"oPlayer","path":"objects/oPlayer/oPlayer.yy",},},
     {"id":{"name":"oTest","path":"objects/oTest/oTest.yy",},},
     {"id":{"name":"rTest","path":"rooms/rTest/rTest.yy",},},
     {"id":{"name":"GMU_Command","path":"scripts/GMU_Command/GMU_Command.yy",},},
@@ -32,6 +35,9 @@
     {"id":{"name":"GMU_Procedural","path":"scripts/GMU_Procedural/GMU_Procedural.yy",},},
     {"id":{"name":"GMU_Rendering","path":"scripts/GMU_Rendering/GMU_Rendering.yy",},},
     {"id":{"name":"GMU_State","path":"scripts/GMU_State/GMU_State.yy",},},
+    {"id":{"name":"Script10","path":"scripts/Script10/Script10.yy",},},
+    {"id":{"name":"spr_block","path":"sprites/spr_block/spr_block.yy",},},
+    {"id":{"name":"spr_player","path":"sprites/spr_player/spr_player.yy",},},
   ],
   "resourceType":"GMProject",
   "resourceVersion":"2.0",

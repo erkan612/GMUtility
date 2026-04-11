@@ -1,4 +1,4 @@
-InputManager.Update();
+InputManager.Update(delta_time);
 
 if (InputManager.IsJustPressed("zoom_in")) {
 	show_debug_message("up");

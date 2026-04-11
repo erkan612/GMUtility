@@ -476,3 +476,20 @@ function GetUnixDateTime(dateTarget) {
     return date_compare_date(dateStart, dateTarget);
 };
 
+function ds_queue_to_array(queue) {
+    var result = [];
+	var copy = ds_queue_create();
+	
+	ds_queue_copy(copy, queue);
+    
+    var size = ds_queue_size(copy);
+    
+    for (var i = 0; i < size; i++) {
+        result[i] = ds_queue_dequeue(copy);
+    }
+	
+	ds_queue_destroy(copy);
+    
+    return result;
+}
+

@@ -1,10 +1,12 @@
 {
   "FolderOrderSettings":[
     {"name":"KISMET","order":1,"path":"folders/KISMET.yy",},
+    {"name":"Test","order":4,"path":"folders/Test.yy",},
   ],
   "ResourceOrderSettings":[
-    {"name":"oTest","order":3,"path":"objects/oTest/oTest.yy",},
-    {"name":"rTest","order":2,"path":"rooms/rTest/rTest.yy",},
+    {"name":"oBlock","order":5,"path":"objects/oBlock/oBlock.yy",},
+    {"name":"oPlayer","order":4,"path":"objects/oPlayer/oPlayer.yy",},
+    {"name":"rTest","order":1,"path":"rooms/rTest/rTest.yy",},
     {"name":"GMU_Command","order":7,"path":"scripts/GMU_Command/GMU_Command.yy",},
     {"name":"GMU_Core","order":1,"path":"scripts/GMU_Core/GMU_Core.yy",},
     {"name":"GMU_DS","order":2,"path":"scripts/GMU_DS/GMU_DS.yy",},
@@ -14,5 +16,8 @@
     {"name":"GMU_Procedural","order":8,"path":"scripts/GMU_Procedural/GMU_Procedural.yy",},
     {"name":"GMU_Rendering","order":6,"path":"scripts/GMU_Rendering/GMU_Rendering.yy",},
     {"name":"GMU_State","order":4,"path":"scripts/GMU_State/GMU_State.yy",},
+    {"name":"Script10","order":5,"path":"scripts/Script10/Script10.yy",},
+    {"name":"spr_block","order":3,"path":"sprites/spr_block/spr_block.yy",},
+    {"name":"spr_player","order":2,"path":"sprites/spr_player/spr_player.yy",},
   ],
 }

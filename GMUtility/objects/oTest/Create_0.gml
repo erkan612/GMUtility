@@ -10,4 +10,3 @@ zoom_out_binding = InputManager.InputBindingFromMouseWheel(MOUSE_WHEEL.DOWN, 1);
 // Add bindings to actions
 InputManager.GetAction("zoom_in").AddBinding(zoom_in_binding);
 InputManager.GetAction("zoom_out").AddBinding(zoom_out_binding);
-
