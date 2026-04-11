@@ -34,7 +34,7 @@
 *   		**********************************************************************           *
 *********************************************************************************************/
 
-#macro GMU_NAMESPACES_INIT globalvar MemoryTracker; MemoryTracker = new MemoryTracker(); globalvar InputManager; InputManager = new InputManager(); globalvar Input; Input = new Input(); globalvar MemoryLeakDetector; MemoryLeakDetector = new MemoryLeakDetector(); globalvar CommandManager; CommandManager = new CommandManager(); globalvar InterfaceAccess; InterfaceAccess = new InterfaceAccess
+#macro GMU_NAMESPACES_INIT globalvar MemoryTracker; MemoryTracker = new MemoryTracker(); globalvar InputManager; InputManager = new InputManager(); globalvar Input; Input = new Input(); globalvar MemoryLeakDetector; MemoryLeakDetector = new MemoryLeakDetector(); globalvar CommandManager; CommandManager = new CommandManager(); globalvar InterfaceAccess; InterfaceAccess = new InterfaceAccess(); globalvar IDGenerate; IDGenerate = new IDGenerate
 #macro GMU_NAMESPACES_CLEANUP MemoryLeakDetector.Free(); CommandManager.Free(); InterfaceAccess.Free(); MemoryTracker.CleanupAll
 
 // Memory Tracker - for data structures
