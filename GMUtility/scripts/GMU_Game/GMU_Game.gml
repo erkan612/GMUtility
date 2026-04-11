@@ -1,3 +1,5 @@
+
+
 // Enums
 enum QUEST_STATE {
     INACTIVE,           // Not started
@@ -9,6 +11,7 @@ enum QUEST_STATE {
     AVAILABLE           // Can be accepted
 }
 
+// Quest type enum
 enum QUEST_TYPE {
     MAIN,               // Main story quest
     SIDE,               // Optional side quest
@@ -18,6 +21,7 @@ enum QUEST_TYPE {
     HIDDEN              // Secret quest
 }
 
+// Reward type enum
 enum REWARD_TYPE {
     EXPERIENCE,
     CURRENCY,
@@ -29,73 +33,447 @@ enum REWARD_TYPE {
     CUSTOM
 }
 
+function GameContext() constructor {
+    // Core systems
+    player = undefined;              // Player instance or struct
+    party = undefined;               // Party members (array or struct)
+    
+    // Inventory & Currency
+    inventory = undefined;           // Inventory system
+    currency = undefined;            // Currency system (or array for multiple currencies)
+    
+    // Progression
+    flags = undefined;               // Flag system for game state
+    
+    // Stats
+    statistics = ds_map_create_gmu(); // Tracked statistics
+    
+    // World
+    currentLocation = undefined;     // Current map/area ID
+    gameTime = 0;                    // Play time in seconds
+    
+    // Callbacks
+    onRewardGiven = undefined;       // function(type, value, id)
+    onQuestStateChanged = undefined; // function(quest, oldState, newState)
+    onAchievementUnlocked = undefined; // function(achievementId)
+    onStatChanged = undefined;       // function(statId, oldValue, newValue)
+    
+    //  Player queries
+    function GetPlayerLevel() {
+        if (player == undefined) return 1;
+        
+        if (is_struct(player) && variable_struct_exists(player, "GetLevel")) {
+            return player.GetLevel();
+        } else if (instance_exists(player) && variable_instance_exists(player, "level")) {
+            return player.level;
+        } else if (is_struct(player) && variable_struct_exists(player, "level")) {
+            return player.level;
+        }
+        return 1;
+    };
+    
+    function GetPlayerPosition() {
+        if (player == undefined) return { x: 0, y: 0 };
+        
+        if (instance_exists(player)) {
+            return { x: player.x, y: player.y };
+        } else if (is_struct(player) && variable_struct_exists(player, "x")) {
+            return { x: player.x, y: player.y };
+        }
+        return { x: 0, y: 0 };
+    };
+    
+    function AddExperience(amount) {
+        if (player == undefined) return false;
+        
+        if (is_struct(player) && variable_struct_exists(player, "AddExperience")) {
+            player.AddExperience(amount);
+            return true;
+        } else if (instance_exists(player) && variable_instance_exists(player, "exp")) {
+            player.exp += amount;
+            return true;
+        } else if (is_struct(player) && variable_struct_exists(player, "exp")) {
+            player.exp += amount;
+            return true;
+        }
+        return false;
+    };
+    
+    //  Inventory queries
+    function HasItem(itemId, count) {
+        if (inventory == undefined) return false;
+        
+        if (is_struct(inventory) && variable_struct_exists(inventory, "HasItem")) {
+            return inventory.HasItem(itemId, count);
+        } else if (is_struct(inventory) && variable_struct_exists(inventory, "GetCount")) {
+            return inventory.GetCount(itemId) >= count;
+        }
+        return false;
+    };
+    
+    function GetItemCount(itemId) {
+        if (inventory == undefined) return 0;
+        
+        if (is_struct(inventory) && variable_struct_exists(inventory, "GetCount")) {
+            return inventory.GetCount(itemId);
+        }
+        return 0;
+    };
+    
+    function AddItem(itemId, count) {
+        if (inventory == undefined) return false;
+        
+        if (is_struct(inventory) && variable_struct_exists(inventory, "AddItem")) {
+            return inventory.AddItem(itemId, count);
+        } else if (is_struct(inventory) && variable_struct_exists(inventory, "Add")) {
+            inventory.Add(itemId, count);
+            return true;
+        }
+        return false;
+    };
+    
+    function RemoveItem(itemId, count) {
+        if (inventory == undefined) return false;
+        
+        if (is_struct(inventory) && variable_struct_exists(inventory, "RemoveItem")) {
+            return inventory.RemoveItem(itemId, count);
+        }
+        return false;
+    };
+    
+    //  Currency queries
+    function GetCurrency(currencyId = "default") {
+        if (currency == undefined) return 0;
+        
+        if (is_struct(currency) && variable_struct_exists(currency, "Get")) {
+            return currency.Get(currencyId);
+        } else if (is_real(currency)) {
+            return currency;
+        }
+        return 0;
+    };
+    
+    function AddCurrency(amount, currencyId = "default") {
+        if (currency == undefined) return false;
+        
+        if (is_struct(currency) && variable_struct_exists(currency, "Add")) {
+            currency.Add(amount, currencyId);
+            
+            if (onRewardGiven != undefined) {
+                onRewardGiven(REWARD_TYPE.CURRENCY, amount, currencyId);
+            }
+            return true;
+        } else if (is_real(currency)) {
+            currency += amount;
+            return true;
+        }
+        return false;
+    };
+    
+    function SpendCurrency(amount, currencyId = "default") {
+        if (currency == undefined) return false;
+        
+        if (is_struct(currency) && variable_struct_exists(currency, "Spend")) {
+            return currency.Spend(amount, currencyId);
+        } else if (is_real(currency) && currency >= amount) {
+            currency -= amount;
+            return true;
+        }
+        return false;
+    };
+    
+    //  Flag queries
+    function HasFlag(flagValue) {
+        if (flags == undefined) return false;
+        return flags.Has(flagValue);
+    };
+    
+    function SetFlag(flagValue) {
+        if (flags == undefined) {
+            flags = new FlagPatrol();
+        }
+        flags.Add(flagValue);
+        return self;
+    };
+    
+    function ClearFlag(flagValue) {
+        if (flags == undefined) return self;
+        flags.Remove(flagValue);
+        return self;
+    };
+    
+    function ToggleFlag(flagValue) {
+        if (flags == undefined) {
+            flags = new FlagPatrol();
+        }
+        flags.Toggle(flagValue);
+        return self;
+    };
+    
+    function GetFlags() {
+        if (flags == undefined) return 0;
+        return flags.Get();
+    };
+    
+    function SetFlags(value) {
+        if (flags == undefined) {
+            flags = new FlagPatrol();
+        }
+        flags.Set(value);
+        return self;
+    };
+    
+    function HasAllFlags(flagValues) {
+        if (flags == undefined) return false;
+        for (var i = 0; i < array_length(flagValues); i++) {
+            if (!flags.Has(flagValues[i])) return false;
+        }
+        return true;
+    };
+    
+    function HasAnyFlag(flagValues) {
+        if (flags == undefined) return false;
+        for (var i = 0; i < array_length(flagValues); i++) {
+            if (flags.Has(flagValues[i])) return true;
+        }
+        return false;
+    };
+    
+    //  Reputation queries
+    function GetReputation(factionId) {
+        var key = "rep_" + factionId;
+        return statistics[? key] ?? 0;
+    };
+    
+    function AddReputation(factionId, amount) {
+        var key = "rep_" + factionId;
+        var oldValue = statistics[? key] ?? 0;
+        statistics[? key] = oldValue + amount;
+        
+        if (onStatChanged != undefined) {
+            onStatChanged(key, oldValue, statistics[? key]);
+        }
+        return self;
+    };
+    
+    function HasReputation(factionId, required) {
+        return GetReputation(factionId) >= required;
+    };
+    
+    //  Statistics tracking
+    function IncrementStat(statId, amount = 1) {
+        var oldValue = statistics[? statId] ?? 0;
+        statistics[? statId] = oldValue + amount;
+        
+        if (onStatChanged != undefined) {
+            onStatChanged(statId, oldValue, statistics[? statId]);
+        }
+        return self;
+    };
+    
+    function GetStat(statId) {
+        return statistics[? statId] ?? 0;
+    };
+    
+    function SetStat(statId, value) {
+        var oldValue = statistics[? statId] ?? 0;
+        statistics[? statId] = value;
+        
+        if (onStatChanged != undefined) {
+            onStatChanged(statId, oldValue, value);
+        }
+        return self;
+    };
+    
+    //  Quest system integration
+    function UnlockQuest(questId) {
+        if (QuestManager != undefined) {
+            QuestManager.UnlockQuest(questId);
+        }
+        return self;
+    };
+    
+    function IsQuestCompleted(questId) {
+        if (QuestTracker != undefined) {
+            return QuestTracker.IsQuestCompleted(questId);
+        }
+        return false;
+    };
+    
+    function GetQuest(questId) {
+        if (QuestTracker != undefined) {
+            return QuestTracker.GetQuest(questId);
+        }
+        return undefined;
+    };
+    
+    //  Achievement system integration
+    function UnlockAchievement(achievementId) {
+        if (AchievementManager != undefined) {
+            AchievementManager.Unlock(achievementId);
+            
+            if (onAchievementUnlocked != undefined) {
+                onAchievementUnlocked(achievementId);
+            }
+        }
+        return self;
+    };
+    
+    function ProgressAchievement(achievementId, amount = 1) {
+        if (AchievementManager != undefined) {
+            AchievementManager.Progress(achievementId, amount);
+        }
+        return self;
+    };
+    
+    //  Reward handling
+    function GiveReward(type, value, id = undefined) {
+        switch(type) {
+            case REWARD_TYPE.EXPERIENCE:
+                AddExperience(value);
+                break;
+                
+            case REWARD_TYPE.CURRENCY:
+                AddCurrency(value, id);
+                break;
+                
+            case REWARD_TYPE.ITEM:
+                AddItem(id, value);
+                break;
+                
+            case REWARD_TYPE.SKILL_POINT:
+                if (player != undefined && variable_struct_exists(player, "AddSkillPoint")) {
+                    player.AddSkillPoint(value);
+                }
+                break;
+                
+            case REWARD_TYPE.UNLOCK_QUEST:
+                UnlockQuest(id);
+                break;
+                
+            case REWARD_TYPE.UNLOCK_ACHIEVEMENT:
+                UnlockAchievement(id);
+                break;
+                
+            case REWARD_TYPE.REPUTATION:
+                AddReputation(id, value);
+                break;
+        }
+        
+        if (onRewardGiven != undefined) {
+            onRewardGiven(type, value, id);
+        }
+        
+        return self;
+    };
+    
+    //  Update
+    function Update(deltaTime = 1/60) {
+        gameTime += deltaTime;
+        
+        // Update quest tracker if available
+        if (QuestTracker != undefined) {
+            QuestTracker.Update(self);
+        }
+    };
+    
+    //  Serialization
+    function Serialize() {
+        var data = {
+            gameTime: gameTime,
+            currentLocation: currentLocation,
+            statistics: {},
+            flags: {}
+        };
+        
+        // Serialize statistics map
+        var statKeys = ds_map_keys_to_array(statistics);
+        for (var i = 0; i < array_length(statKeys); i++) {
+            var key = statKeys[i];
+            data.statistics[$ key] = statistics[? key];
+        }
+        
+        // Serialize flags
+        if (flags != undefined) {
+            if (is_struct(flags) && variable_struct_exists(flags, "Serialize")) {
+                data.flags = flags.Serialize();
+            } else if (ds_exists(flags, ds_type_map)) {
+                var flagKeys = ds_map_keys_to_array(flags);
+                for (var i = 0; i < array_length(flagKeys); i++) {
+                    var key = flagKeys[i];
+                    data.flags[$ key] = flags[? key];
+                }
+            }
+        }
+        
+        return data;
+    };
+    
+    function Deserialize(_data) {
+        gameTime = _data.gameTime ?? 0;
+        currentLocation = _data.currentLocation;
+        
+        // Deserialize statistics
+        var statKeys = variable_struct_get_names(_data.statistics);
+        for (var i = 0; i < array_length(statKeys); i++) {
+            var key = statKeys[i];
+            statistics[? key] = _data.statistics[$ key];
+        }
+        
+        // Deserialize flags
+        if (_data.flags != undefined && flags != undefined) {
+            if (is_struct(flags) && variable_struct_exists(flags, "Deserialize")) {
+                flags.Deserialize(_data.flags);
+            } else if (ds_exists(flags, ds_type_map)) {
+                var flagKeys = variable_struct_get_names(_data.flags);
+                for (var i = 0; i < array_length(flagKeys); i++) {
+                    var key = flagKeys[i];
+                    flags[? key] = _data.flags[$ key];
+                }
+            }
+        }
+        
+        return self;
+    };
+    
+    //  Cleanup
+    function Free() {
+        if (ds_exists(statistics, ds_type_map)) {
+            ds_map_destroy_gmu(statistics);
+        }
+    };
+    
+    //  Debug
+    function DebugDump() {
+        show_debug_message("=== GameContext Debug Dump ===");
+        show_debug_message($"Player Level: {GetPlayerLevel()}");
+        show_debug_message($"Game Time: {gameTime}s");
+        show_debug_message($"Location: {currentLocation ?? "Unknown"}");
+        show_debug_message($"Statistics: {ds_map_size(statistics)} entries");
+        show_debug_message("==============================");
+    };
+    
+    toString = function() {
+        return $"GameContext: Lvl {GetPlayerLevel()}, Time {gameTime}s";
+    };
+}
+
 function Reward(_type, _value, _id = undefined) constructor {
     type = _type;
     value = _value;
-    id = _id;                       // For items, quest IDs, etc.
-    customHandler = undefined;      // For CUSTOM type
+    id = _id;
+    customHandler = undefined;
     
     function SetCustomHandler(_handler) {
         customHandler = _handler;
         return self;
     };
     
-    function Give(_target = undefined) {
-        switch(type) {
-            case REWARD_TYPE.EXPERIENCE:
-                if (is_struct(_target) && struct_has_method(_target, "AddExperience")) {
-                    _target.AddExperience(value);
-                } else if (instance_exists(_target)) {
-                    _target.exp += value;
-                }
-                break;
-                
-            case REWARD_TYPE.CURRENCY:
-                if (variable_global_exists("currency")) {
-                    global.currency += value;
-                }
-                break;
-                
-            case REWARD_TYPE.ITEM:
-                if (is_struct(_target) && struct_has_method(_target, "AddItem")) {
-                    _target.AddItem(id, value);
-                } else {
-                    // Fallback: global inventory
-                    if (variable_global_exists("inventory")) {
-                        global.inventory.Add(id, value);
-                    }
-                }
-                break;
-                
-            case REWARD_TYPE.SKILL_POINT:
-                if (is_struct(_target) && struct_has_method(_target, "AddSkillPoint")) {
-                    _target.AddSkillPoint(value);
-                }
-                break;
-                
-            case REWARD_TYPE.UNLOCK_QUEST:
-                if (variable_global_exists("QuestManager")) {
-                    global.QuestManager.UnlockQuest(id);
-                }
-                break;
-                
-            case REWARD_TYPE.UNLOCK_ACHIEVEMENT:
-                if (variable_global_exists("AchievementManager")) {
-                    global.AchievementManager.Unlock(id);
-                }
-                break;
-                
-            case REWARD_TYPE.REPUTATION:
-                if (is_struct(_target) && struct_has_method(_target, "AddReputation")) {
-                    _target.AddReputation(id, value);
-                }
-                break;
-                
-            case REWARD_TYPE.CUSTOM:
-                if (customHandler != undefined) {
-                    customHandler(_target);
-                }
-                break;
+    function Give(context) {
+        if (type == REWARD_TYPE.CUSTOM && customHandler != undefined) {
+            customHandler(context);
+        } else if (context != undefined) {
+            context.GiveReward(type, value, id);
         }
         return self;
     };
@@ -109,8 +487,7 @@ function Reward(_type, _value, _id = undefined) constructor {
     };
     
     static Deserialize = function(_data) {
-        var reward = new Reward(_data.type, _data.value, _data.id);
-        return reward;
+        return new Reward(_data.type, _data.value, _data.id);
     };
     
     toString = function() {
@@ -136,8 +513,8 @@ function RewardBundle() constructor {
         return Add(REWARD_TYPE.EXPERIENCE, _amount);
     };
     
-    function AddCurrency(_amount) {
-        return Add(REWARD_TYPE.CURRENCY, _amount);
+    function AddCurrency(_amount, _currencyId = "default") {
+        return Add(REWARD_TYPE.CURRENCY, _amount, _currencyId);
     };
     
     function AddItem(_itemId, _count = 1) {
@@ -167,37 +544,11 @@ function RewardBundle() constructor {
         return self;
     };
     
-    function Give(_target = undefined) {
+    function Give(context) {
         for (var i = 0; i < array_length(rewards); i++) {
-            rewards[i].Give(_target);
+            rewards[i].Give(context);
         }
         return self;
-    };
-    
-    function GetTotalExperience() {
-        var total = 0;
-        for (var i = 0; i < array_length(rewards); i++) {
-            if (rewards[i].type == REWARD_TYPE.EXPERIENCE) total += rewards[i].value;
-        }
-        return total;
-    };
-    
-    function GetTotalCurrency() {
-        var total = 0;
-        for (var i = 0; i < array_length(rewards); i++) {
-            if (rewards[i].type == REWARD_TYPE.CURRENCY) total += rewards[i].value;
-        }
-        return total;
-    };
-    
-    function GetItems() {
-        var items = [];
-        for (var i = 0; i < array_length(rewards); i++) {
-            if (rewards[i].type == REWARD_TYPE.ITEM) {
-                array_push(items, { id: rewards[i].id, count: rewards[i].value });
-            }
-        }
-        return items;
     };
     
     function IsEmpty() {
@@ -236,10 +587,10 @@ function RewardBundle() constructor {
     };
 }
 
-function QuestPrerequisite(_type, _target, _value = 1) constructor {//  QuestPrerequisite - Condition that must be met to start quest
-    type = _type;           // "quest", "level", "item", "reputation", "flag", "custom"
-    target = _target;       // Quest ID, level number, item ID, flag name, etc.
-    value = _value;         // Required value
+function QuestPrerequisite(_type, _target, _value = 1) constructor {
+    type = _type;
+    target = _target;
+    value = _value;
     customCheck = undefined;
     
     function SetCustomCheck(_check) {
@@ -247,48 +598,28 @@ function QuestPrerequisite(_type, _target, _value = 1) constructor {//  QuestPre
         return self;
     };
     
-    function IsMet(_player = undefined) {
+    function IsMet(context) {
+        if (context == undefined) return true;
+        
         switch(type) {
             case "quest":
-                if (variable_global_exists("QuestTracker")) {
-                    var quest = global.QuestTracker.GetQuest(target);
-                    return quest != undefined && quest.state == QUEST_STATE.COMPLETED;
-                }
-                return false;
+                return context.IsQuestCompleted(target);
                 
             case "level":
-                if (is_struct(_player) && struct_has_method(_player, "GetLevel")) {
-                    return _player.GetLevel() >= value;
-                } else if (instance_exists(_player)) {
-                    return _player.level >= value;
-                } else if (variable_global_exists("playerLevel")) {
-                    return global.playerLevel >= value;
-                }
-                return false;
+                return context.GetPlayerLevel() >= value;
                 
             case "item":
-                if (is_struct(_player) && struct_has_method(_player, "HasItem")) {
-                    return _player.HasItem(target, value);
-                } else if (variable_global_exists("inventory")) {
-                    return global.inventory.GetCount(target) >= value;
-                }
-                return false;
+                return context.HasItem(target, value);
                 
             case "reputation":
-                if (is_struct(_player) && struct_has_method(_player, "GetReputation")) {
-                    return _player.GetReputation(target) >= value;
-                }
-                return false;
+                return context.HasReputation(target, value);
                 
             case "flag":
-                if (variable_global_exists("flags")) {
-                    return global.flags.Has(target);
-                }
-                return false;
+                return context.HasFlag(target);
                 
             case "custom":
                 if (customCheck != undefined) {
-                    return customCheck(_player);
+                    return customCheck(context);
                 }
                 return false;
         }
@@ -312,21 +643,19 @@ function QuestPrerequisite(_type, _target, _value = 1) constructor {//  QuestPre
     };
 }
 
-function QuestObjective(_id, _description, _goal = 1, _type = "generic") constructor { //  QuestObjective - Single objective within a quest
+function QuestObjective(_id, _description, _goal = 1, _type = "generic") constructor {
     id = _id;
     description = _description;
     goal = _goal;
-    type = _type;               // "kill", "collect", "talk", "reach", "wait", "custom"
+    type = _type;
     progress = 0;
     completed = false;
-    hidden = false;             // Hidden until revealed
-    optional = false;           // Optional objective
+    hidden = false;
+    optional = false;
     
-    // Target tracking
-    targetId = undefined;       // Enemy ID, item ID, NPC ID, etc.
-    targetLocation = undefined; // { x, y, radius } for "reach" type
+    targetId = undefined;
+    targetLocation = undefined;
     
-    // Callbacks
     onProgress = undefined;
     onComplete = undefined;
     customUpdate = undefined;
@@ -375,7 +704,6 @@ function QuestObjective(_id, _description, _goal = 1, _type = "generic") constru
     function AddProgress(_amount = 1, _data = undefined) {
         if (completed) return self;
         
-        var oldProgress = progress;
         progress = min(progress + _amount, goal);
         
         if (onProgress != undefined) {
@@ -398,24 +726,23 @@ function QuestObjective(_id, _description, _goal = 1, _type = "generic") constru
         return self;
     };
     
-    function Update(_player = undefined) {
+    function Update(context) {
         if (completed) return self;
         
         if (customUpdate != undefined) {
-            customUpdate(self, _player);
+            customUpdate(self, context);
         } else if (customCheck != undefined) {
-            if (customCheck(_player)) {
+            if (customCheck(context)) {
                 AddProgress(1);
             }
         } else {
-            // Auto-update based on type
             switch(type) {
                 case "reach":
-                    if (targetLocation != undefined && _player != undefined) {
-                        var dist = point_distance(_player.x, _player.y, 
-                                                   targetLocation.x, targetLocation.y);
+                    if (targetLocation != undefined && context != undefined) {
+                        var pos = context.GetPlayerPosition();
+                        var dist = point_distance(pos.x, pos.y, targetLocation.x, targetLocation.y);
                         if (dist <= targetLocation.radius) {
-                            AddProgress(goal); // Complete immediately
+                            AddProgress(goal);
                         }
                     }
                     break;
@@ -470,109 +797,62 @@ function QuestObjective(_id, _description, _goal = 1, _type = "generic") constru
     };
 }
 
-function Quest(_name, _description, _onComplete, _onFail) constructor { //  Quest - Main quest class
+function Quest(_name, _description, _onComplete, _onFail) constructor {
     id = IDGenerate().GUID();
     name = _name;
     description = _description;
     type = QUEST_TYPE.SIDE;
     
-    // State
     state = QUEST_STATE.INACTIVE;
     acceptedTime = -1;
     completedTime = -1;
-    expireTime = -1;                // -1 = never expires
+    expireTime = -1;
     
-    // Objectives
     objectives = ds_map_create_gmu();
-    objectiveOrder = [];            // For sequential objectives
+    objectiveOrder = [];
     
-    // Prerequisites
     prerequisites = [];
     
-    // Rewards
     rewards = new RewardBundle();
-    bonusRewards = new RewardBundle();  // For optional objectives
+    bonusRewards = new RewardBundle();
     
-    // Dependencies
-    nextQuest = undefined;          // Quest ID to unlock after completion
-    childQuests = [];               // Quests unlocked by this one
+    nextQuest = undefined;
+    childQuests = [];
     
-    // Giver info
-    questGiver = undefined;         // NPC ID or name
+    questGiver = undefined;
     questGiverLocation = undefined;
     
-    // Dialogue/Story
     startDialogue = undefined;
     progressDialogue = undefined;
     completeDialogue = undefined;
     
-    // Callbacks
     onComplete = _onComplete;
     onFail = _onFail;
     onAccept = undefined;
     onAbandon = undefined;
     onObjectiveComplete = undefined;
     
-    // Custom data
     customData = undefined;
     
-    //  Configuration methods
-    function SetType(_type) {
-        type = _type;
-        return self;
-    };
+    // Configuration methods (unchanged - just returning self)
+    function SetType(_type) { type = _type; return self; };
+    function SetId(_id) { id = _id; return self; };
+    function SetQuestGiver(_npcId, _location = undefined) { questGiver = _npcId; questGiverLocation = _location; return self; };
+    function SetExpireTime(_seconds) { expireTime = _seconds; return self; };
+    function SetNextQuest(_questId) { nextQuest = _questId; return self; };
+    function AddChildQuest(_questId) { array_push(childQuests, _questId); return self; };
     
-    function SetId(_id) {
-        id = _id;
-        return self;
-    };
-    
-    function SetQuestGiver(_npcId, _location = undefined) {
-        questGiver = _npcId;
-        questGiverLocation = _location;
-        return self;
-    };
-    
-    function SetExpireTime(_seconds) {
-        expireTime = _seconds;
-        return self;
-    };
-    
-    function SetNextQuest(_questId) {
-        nextQuest = _questId;
-        return self;
-    };
-    
-    function AddChildQuest(_questId) {
-        array_push(childQuests, _questId);
-        return self;
-    };
-    
-    //  Prerequisites
+    // Prerequisites
     function AddPrerequisite(_type, _target, _value = 1) {
         array_push(prerequisites, new QuestPrerequisite(_type, _target, _value));
         return self;
     };
     
-    function RequireQuest(_questId) {
-        return AddPrerequisite("quest", _questId);
-    };
-    
-    function RequireLevel(_level) {
-        return AddPrerequisite("level", "", _level);
-    };
-    
-    function RequireItem(_itemId, _count = 1) {
-        return AddPrerequisite("item", _itemId, _count);
-    };
-    
-    function RequireReputation(_factionId, _amount) {
-        return AddPrerequisite("reputation", _factionId, _amount);
-    };
-    
-    function RequireFlag(_flagName) {
-        return AddPrerequisite("flag", _flagName);
-    };
+    function RequireQuest(_questId) { return AddPrerequisite("quest", _questId); };
+    function RequireLevel(_level) { return AddPrerequisite("level", "", _level); };
+    function RequireItem(_itemId, _count = 1) { return AddPrerequisite("item", _itemId, _count); };
+    function RequireReputation(_factionId, _amount) { return AddPrerequisite("reputation", _factionId, _amount); };
+    function RequireFlag(_flagName) { return AddPrerequisite("flag", _flagName); };
     
     function RequireCustom(_check) {
         var prereq = new QuestPrerequisite("custom", "", 1);
@@ -581,16 +861,16 @@ function Quest(_name, _description, _onComplete, _onFail) constructor { //  Ques
         return self;
     };
     
-    function CheckPrerequisites(_player = undefined) {
+    function CheckPrerequisites(context) {
         for (var i = 0; i < array_length(prerequisites); i++) {
-            if (!prerequisites[i].IsMet(_player)) {
+            if (!prerequisites[i].IsMet(context)) {
                 return false;
             }
         }
         return true;
     };
     
-    //  Objectives
+    // Objectives
     function AddObjective(_objective) {
         objectives[? _objective.id] = _objective;
         array_push(objectiveOrder, _objective.id);
@@ -618,17 +898,6 @@ function Quest(_name, _description, _onComplete, _onFail) constructor { //  Ques
     function AddReachObjective(_id, _x, _y, _radius, _description) {
         var obj = new QuestObjective(_id, _description, 1, "reach");
         obj.SetLocation(_x, _y, _radius);
-        return AddObjective(obj);
-    };
-    
-    function AddWaitObjective(_id, _seconds, _description) {
-        var obj = new QuestObjective(_id, _description, _seconds, "wait");
-        obj.SetCustomUpdate(function(self, player) {
-            self.timer = is_undefined(self.timer) ? 0 : self.timer + delta_time;
-            if (self.timer >= self.goal) {
-                self.AddProgress(self.goal);
-            }
-        });
         return AddObjective(obj);
     };
     
@@ -681,54 +950,30 @@ function Quest(_name, _description, _onComplete, _onFail) constructor { //  Ques
         return self;
     };
     
-    //  Rewards
-    function AddReward(_type, _value, _id = undefined) {
-        rewards.Add(_type, _value, _id);
-        return self;
+    // Rewards
+    function AddReward(_type, _value, _id = undefined) { rewards.Add(_type, _value, _id); return self; };
+    function AddBonusReward(_type, _value, _id = undefined) { bonusRewards.Add(_type, _value, _id); return self; };
+    function GetRewards() { return rewards; };
+    function GetBonusRewards() { return bonusRewards; };
+    
+    // Dialogue
+    function SetStartDialogue(_dialogueId) { startDialogue = _dialogueId; return self; };
+    function SetProgressDialogue(_dialogueId) { progressDialogue = _dialogueId; return self; };
+    function SetCompleteDialogue(_dialogueId) { completeDialogue = _dialogueId; return self; };
+    
+    // State control
+    function CanAccept(context) {
+        return state == QUEST_STATE.AVAILABLE && CheckPrerequisites(context);
     };
     
-    function AddBonusReward(_type, _value, _id = undefined) {
-        bonusRewards.Add(_type, _value, _id);
-        return self;
-    };
-    
-    function GetRewards() {
-        return rewards;
-    };
-    
-    function GetBonusRewards() {
-        return bonusRewards;
-    };
-    
-    //  Dialogue
-    function SetStartDialogue(_dialogueId) {
-        startDialogue = _dialogueId;
-        return self;
-    };
-    
-    function SetProgressDialogue(_dialogueId) {
-        progressDialogue = _dialogueId;
-        return self;
-    };
-    
-    function SetCompleteDialogue(_dialogueId) {
-        completeDialogue = _dialogueId;
-        return self;
-    };
-    
-    //  State control
-    function CanAccept(_player = undefined) {
-        return state == QUEST_STATE.AVAILABLE && CheckPrerequisites(_player);
-    };
-    
-    function Accept(_player = undefined) {
-        if (!CanAccept(_player)) return false;
+    function Accept(context) {
+        if (!CanAccept(context)) return false;
         
         state = QUEST_STATE.ACTIVE;
         acceptedTime = current_time;
         
         if (onAccept != undefined) {
-            onAccept(self, _player);
+            onAccept(self, context);
         }
         
         return true;
@@ -758,12 +1003,12 @@ function Quest(_name, _description, _onComplete, _onFail) constructor { //  Ques
         return self;
     };
     
-    function Update(_player = undefined) {
+    function Update(context) {
         if (state != QUEST_STATE.ACTIVE) return self;
         
         // Check expiration
         if (expireTime > 0) {
-            var elapsed = (current_time - acceptedTime) / 1000000; // microseconds to seconds
+            var elapsed = (current_time - acceptedTime) / 1000000;
             if (elapsed >= expireTime) {
                 Fail();
                 return self;
@@ -776,7 +1021,7 @@ function Quest(_name, _description, _onComplete, _onFail) constructor { //  Ques
         
         for (var i = 0; i < array_length(keys); i++) {
             var obj = objectives[? keys[i]];
-            obj.Update(_player);
+            obj.Update(context);
             
             if (obj.IsRequired() && !obj.IsComplete()) {
                 allRequiredComplete = false;
@@ -785,40 +1030,38 @@ function Quest(_name, _description, _onComplete, _onFail) constructor { //  Ques
         
         // Check completion
         if (allRequiredComplete) {
-            Complete(_player);
+            Complete(context);
         }
         
         return self;
     };
     
-    function Complete(_player = undefined) {
+    function Complete(context) {
         if (state != QUEST_STATE.ACTIVE) return self;
         
         state = QUEST_STATE.COMPLETED;
         completedTime = current_time;
         
         // Give rewards
-        rewards.Give(_player);
+        rewards.Give(context);
         
         // Give bonus rewards for completed optional objectives
         var keys = ds_map_keys_to_array(objectives);
         for (var i = 0; i < array_length(keys); i++) {
             var obj = objectives[? keys[i]];
             if (obj.optional && obj.IsComplete()) {
-                bonusRewards.Give(_player);
+                bonusRewards.Give(context);
             }
         }
         
         // Unlock next quest
-        if (nextQuest != undefined && variable_global_exists("QuestManager")) {
-            global.QuestManager.UnlockQuest(nextQuest);
+        if (nextQuest != undefined) {
+            context.UnlockQuest(nextQuest);
         }
         
         // Unlock child quests
         for (var i = 0; i < array_length(childQuests); i++) {
-            if (variable_global_exists("QuestManager")) {
-                global.QuestManager.UnlockQuest(childQuests[i]);
-            }
+            context.UnlockQuest(childQuests[i]);
         }
         
         if (is_callable(onComplete)) onComplete(self);
@@ -826,23 +1069,12 @@ function Quest(_name, _description, _onComplete, _onFail) constructor { //  Ques
         return self;
     };
     
-    function IsComplete() {
-        return state == QUEST_STATE.COMPLETED;
-    };
+    function IsComplete() { return state == QUEST_STATE.COMPLETED; };
+    function IsActive() { return state == QUEST_STATE.ACTIVE; };
+    function IsAvailable() { return state == QUEST_STATE.AVAILABLE; };
+    function IsLocked() { return state == QUEST_STATE.LOCKED; };
     
-    function IsActive() {
-        return state == QUEST_STATE.ACTIVE;
-    };
-    
-    function IsAvailable() {
-        return state == QUEST_STATE.AVAILABLE;
-    };
-    
-    function IsLocked() {
-        return state == QUEST_STATE.LOCKED;
-    };
-    
-    //  Serialization
+    // Serialization
     function Serialize() {
         var data = {
             id: id,
@@ -877,7 +1109,7 @@ function Quest(_name, _description, _onComplete, _onFail) constructor { //  Ques
         return self;
     };
     
-    //  Utility
+    // Utility
     function Reset() {
         state = QUEST_STATE.INACTIVE;
         acceptedTime = -1;
@@ -945,7 +1177,7 @@ function Quest(_name, _description, _onComplete, _onFail) constructor { //  Ques
     };
 }
 
-function QuestChain(_name) constructor { //  QuestChain - Series of quests that must be completed in order
+function QuestChain(_name) constructor {
     name = _name;
     quests = [];                // Quest IDs in order
     currentIndex = 0;
@@ -1017,19 +1249,17 @@ function QuestChain(_name) constructor { //  QuestChain - Series of quests that 
     };
 }
 
-function QuestManager() constructor { //  QuestManager - Manages all quests and templates
-    templates = ds_map_create_gmu();     // Quest templates by ID
-    chains = ds_map_create_gmu();        // Quest chains by ID
-    questCategories = ds_map_create_gmu(); // Quests by category
+function QuestManager() constructor {
+    templates = ds_map_create_gmu();
+    chains = ds_map_create_gmu();
+    questCategories = ds_map_create_gmu();
     
-    // Events
     onQuestAccepted = undefined;
     onQuestCompleted = undefined;
     onQuestFailed = undefined;
     onQuestAbandoned = undefined;
     onObjectiveProgress = undefined;
     
-    //  Template management
     function RegisterTemplate(_template) {
         templates[? _template.id] = _template;
         return self;
@@ -1043,7 +1273,6 @@ function QuestManager() constructor { //  QuestManager - Manages all quests and 
         return ds_map_exists(templates, _id);
     };
     
-    //  Chain management
     function RegisterChain(_chain) {
         chains[? _chain.name] = _chain;
         return self;
@@ -1053,7 +1282,7 @@ function QuestManager() constructor { //  QuestManager - Manages all quests and 
         return chains[? _name];
     };
     
-    function StartChain(_chainName) {
+    function StartChain(_chainName, context) {
         var chain = chains[? _chainName];
         if (chain != undefined) {
             var firstQuest = chain.GetCurrentQuest();
@@ -1064,12 +1293,10 @@ function QuestManager() constructor { //  QuestManager - Manages all quests and 
         return undefined;
     };
     
-    //  Quest spawning
     function SpawnQuest(_templateId, _customOnComplete = undefined, _customOnFail = undefined) {
         var template = GetTemplate(_templateId);
         if (template == undefined) return undefined;
         
-        // Create a new quest instance from template
         var newQuest = new Quest(
             template.name, 
             template.description, 
@@ -1077,16 +1304,13 @@ function QuestManager() constructor { //  QuestManager - Manages all quests and 
             _customOnFail ?? template.onFail
         );
         
-        // Copy properties
         newQuest.SetId(template.id);
         newQuest.SetType(template.type);
         
-        // Copy prerequisites
         for (var i = 0; i < array_length(template.prerequisites); i++) {
             array_push(newQuest.prerequisites, template.prerequisites[i]);
         }
         
-        // Copy objectives
         var keys = ds_map_keys_to_array(template.objectives);
         for (var i = 0; i < array_length(keys); i++) {
             var key = keys[i];
@@ -1112,52 +1336,26 @@ function QuestManager() constructor { //  QuestManager - Manages all quests and 
             newQuest.AddObjective(newObj);
         }
         
-        // Copy rewards
         newQuest.rewards = template.rewards;
         newQuest.bonusRewards = template.bonusRewards;
         newQuest.nextQuest = template.nextQuest;
         newQuest.childQuests = template.childQuests;
         
-        // Set state to AVAILABLE (will be unlocked if prereqs met)
         newQuest.state = QUEST_STATE.AVAILABLE;
         
         return newQuest;
     };
     
     function UnlockQuest(_questId) {
-        // This would be called when prerequisites are met
-        // Implementation depends on how quests are stored
-        if (variable_global_exists("QuestTracker")) {
-            var quest = global.QuestTracker.GetQuest(_questId);
-            if (quest != undefined) {
-                quest.state = QUEST_STATE.AVAILABLE;
-            }
-        }
+        // This would notify the QuestTracker
         return self;
     };
     
-    //  Event handlers
-    function SetOnQuestAccepted(_callback) {
-        onQuestAccepted = _callback;
-        return self;
-    };
+    function SetOnQuestAccepted(_callback) { onQuestAccepted = _callback; return self; };
+    function SetOnQuestCompleted(_callback) { onQuestCompleted = _callback; return self; };
+    function SetOnQuestFailed(_callback) { onQuestFailed = _callback; return self; };
+    function SetOnObjectiveProgress(_callback) { onObjectiveProgress = _callback; return self; };
     
-    function SetOnQuestCompleted(_callback) {
-        onQuestCompleted = _callback;
-        return self;
-    };
-    
-    function SetOnQuestFailed(_callback) {
-        onQuestFailed = _callback;
-        return self;
-    };
-    
-    function SetOnObjectiveProgress(_callback) {
-        onObjectiveProgress = _callback;
-        return self;
-    };
-    
-    //  Cleanup
     function Clear() {
         ds_map_clear(templates);
         ds_map_clear(chains);
@@ -1179,27 +1377,18 @@ function QuestManager() constructor { //  QuestManager - Manages all quests and 
     };
 }
 
-function QuestTracker() constructor { //  QuestTracker - Tracks player's active and completed quests
-    quests = ds_map_create_gmu();           // All tracked quests
-    completedQuests = [];                   // List of completed quest IDs
-    activeQuestLimit = 10;                  // Max active quests
+function QuestTracker() constructor {
+    quests = ds_map_create_gmu();
+    completedQuests = [];
+    activeQuestLimit = 10;
     
-    // Events
     onQuestAdded = undefined;
     onQuestRemoved = undefined;
     onQuestStateChanged = undefined;
     
-    //  Quest management
     function AddQuest(_quest) {
-        if (ds_map_exists(quests, _quest.id)) {
-            show_debug_message($"[QuestTracker] Quest {_quest.id} already tracked");
-            return self;
-        }
-        
-        if (GetActiveCount() >= activeQuestLimit) {
-            show_debug_message($"[QuestTracker] Cannot add quest - active limit reached");
-            return self;
-        }
+        if (ds_map_exists(quests, _quest.id)) return self;
+        if (GetActiveCount() >= activeQuestLimit) return self;
         
         quests[? _quest.id] = _quest;
         
@@ -1243,12 +1432,11 @@ function QuestTracker() constructor { //  QuestTracker - Tracks player's active 
         return false;
     };
     
-    //  Quest actions
-    function AcceptQuest(_id, _player = undefined) {
+    function AcceptQuest(_id, context) {
         var quest = GetQuest(_id);
         if (quest == undefined) return false;
         
-        if (quest.Accept(_player)) {
+        if (quest.Accept(context)) {
             if (onQuestStateChanged != undefined) {
                 onQuestStateChanged(quest, QUEST_STATE.AVAILABLE, QUEST_STATE.ACTIVE);
             }
@@ -1270,13 +1458,12 @@ function QuestTracker() constructor { //  QuestTracker - Tracks player's active 
         return true;
     };
     
-    function CompleteQuest(_id, _player = undefined) {
+    function CompleteQuest(_id, context) {
         var quest = GetQuest(_id);
         if (quest == undefined) return false;
         
-        quest.Complete(_player);
+        quest.Complete(context);
         
-        // Move to completed list
         array_push(completedQuests, _id);
         ds_map_delete(quests, _id);
         
@@ -1287,7 +1474,6 @@ function QuestTracker() constructor { //  QuestTracker - Tracks player's active 
         return true;
     };
     
-    //  Progress tracking
     function ProgressQuest(_questId, _objectiveId, _amount = 1, _data = undefined) {
         var quest = GetQuest(_questId);
         if (quest != undefined) {
@@ -1305,96 +1491,65 @@ function QuestTracker() constructor { //  QuestTracker - Tracks player's active 
         return self;
     };
     
-    // Kill tracking convenience
-    function OnKill(_enemyId) {
-        return ProgressByType("kill", _enemyId, 1);
-    };
+    function OnKill(_enemyId) { return ProgressByType("kill", _enemyId, 1); };
+    function OnCollect(_itemId, _count = 1) { return ProgressByType("collect", _itemId, _count); };
+    function OnTalk(_npcId) { return ProgressByType("talk", _npcId, 1); };
     
-    // Collect tracking convenience
-    function OnCollect(_itemId, _count = 1) {
-        return ProgressByType("collect", _itemId, _count);
-    };
-    
-    // Talk tracking convenience
-    function OnTalk(_npcId) {
-        return ProgressByType("talk", _npcId, 1);
-    };
-    
-    //  Update
-    function Update(_player = undefined) {
+    function Update(context) {
         var keys = ds_map_keys_to_array(quests);
         
         for (var i = 0; i < array_length(keys); i++) {
             var quest = quests[? keys[i]];
-            var oldState = quest.state;
+            quest.Update(context);
             
-            quest.Update(_player);
-            
-            // Check for auto-completion
             if (quest.IsComplete() && quest.state == QUEST_STATE.ACTIVE) {
-                CompleteQuest(quest.id, _player);
+                CompleteQuest(quest.id, context);
             }
         }
         
         return self;
     };
     
-    //  Queries
     function GetActiveQuests() {
         var result = [];
         var keys = ds_map_keys_to_array(quests);
-        
         for (var i = 0; i < array_length(keys); i++) {
             var quest = quests[? keys[i]];
-            if (quest.IsActive()) {
-                array_push(result, quest);
-            }
+            if (quest.IsActive()) array_push(result, quest);
         }
-        
         return result;
     };
     
     function GetAvailableQuests() {
         var result = [];
         var keys = ds_map_keys_to_array(quests);
-        
         for (var i = 0; i < array_length(keys); i++) {
             var quest = quests[? keys[i]];
-            if (quest.IsAvailable()) {
-                array_push(result, quest);
-            }
+            if (quest.IsAvailable()) array_push(result, quest);
         }
-        
         return result;
     };
     
-    function GetCompletedQuests() {
-        return completedQuests;
-    };
+    function GetCompletedQuests() { return completedQuests; };
     
     function GetActiveCount() {
         var count = 0;
         var keys = ds_map_keys_to_array(quests);
-        
         for (var i = 0; i < array_length(keys); i++) {
             if (quests[? keys[i]].IsActive()) count++;
         }
-        
         return count;
     };
     
     function GetAllQuestSummaries() {
         var summaries = [];
         var keys = ds_map_keys_to_array(quests);
-        
         for (var i = 0; i < array_length(keys); i++) {
             array_push(summaries, quests[? keys[i]].GetSummary());
         }
-        
         return summaries;
     };
     
-    //  Serialization
     function Serialize() {
         var data = {
             completedQuests: completedQuests,
@@ -1417,7 +1572,6 @@ function QuestTracker() constructor { //  QuestTracker - Tracks player's active 
         for (var i = 0; i < array_length(keys); i++) {
             var key = keys[i];
             
-            // Spawn quest from template then deserialize state
             if (_questManager != undefined) {
                 var quest = _questManager.SpawnQuest(key);
                 if (quest != undefined) {
@@ -1430,7 +1584,6 @@ function QuestTracker() constructor { //  QuestTracker - Tracks player's active 
         return self;
     };
     
-    //  Cleanup
     function Clear() {
         ds_map_clear(quests);
         completedQuests = [];
@@ -1448,7 +1601,7 @@ function QuestTracker() constructor { //  QuestTracker - Tracks player's active 
     };
 }
 
-function AchievementManager() constructor { //  AchievementManager - Tracks achievements and progress
+function AchievementManager() constructor {
     achievements = ds_map_create_gmu();  // id -> {name, progress, goal, unlocked, hidden}
     callbacks = ds_map_create_gmu();     // id -> on_unlock callback
     categories = ds_map_create_gmu();    // category -> array of achievement IDs
@@ -1711,5 +1864,389 @@ function AchievementManager() constructor { //  AchievementManager - Tracks achi
     
     toString = function() {
         return $"AchievementManager: {unlocked_count}/{ds_map_size(achievements)} unlocked";
+    };
+}
+
+function SimpleInventory() constructor { //  SimpleInventory - Basic inventory system
+    items = ds_map_create_gmu();        // itemId -> count
+    maxSlots = 99;                      // Unlimited by default
+    maxStackSize = 99;                  // Max items per stack
+    
+    // Callbacks
+    onItemAdded = undefined;            // function(itemId, count, totalCount)
+    onItemRemoved = undefined;          // function(itemId, count, totalCount)
+    onInventoryFull = undefined;        // function(itemId, count)
+    
+    //  Item management
+    function AddItem(itemId, count = 1) {
+        if (count <= 0) return false;
+        
+        var currentCount = GetCount(itemId);
+        var newCount = currentCount + count;
+        
+        // Check stack size limit
+        if (newCount > maxStackSize) {
+            if (onInventoryFull != undefined) {
+                onInventoryFull(itemId, newCount - maxStackSize);
+            }
+            newCount = maxStackSize;
+        }
+        
+        items[? itemId] = newCount;
+        
+        if (onItemAdded != undefined) {
+            onItemAdded(itemId, count, newCount);
+        }
+        
+        return true;
+    };
+    
+    function RemoveItem(itemId, count = 1) {
+        if (count <= 0) return false;
+        if (!HasItem(itemId, count)) return false;
+        
+        var currentCount = GetCount(itemId);
+        var newCount = currentCount - count;
+        
+        if (newCount <= 0) {
+            ds_map_delete(items, itemId);
+        } else {
+            items[? itemId] = newCount;
+        }
+        
+        if (onItemRemoved != undefined) {
+            onItemRemoved(itemId, count, newCount);
+        }
+        
+        return true;
+    };
+    
+    function SetItem(itemId, count) {
+        if (count <= 0) {
+            ds_map_delete(items, itemId);
+        } else {
+            items[? itemId] = min(count, maxStackSize);
+        }
+        return self;
+    };
+    
+    //  Queries
+    function HasItem(itemId, count = 1) {
+        return GetCount(itemId) >= count;
+    };
+    
+    function GetCount(itemId) {
+        return ds_map_exists(items, itemId) ? items[? itemId] : 0;
+    };
+    
+    function GetAllItems() {
+        var result = [];
+        var keys = ds_map_keys_to_array(items);
+        for (var i = 0; i < array_length(keys); i++) {
+            var key = keys[i];
+            array_push(result, { id: key, count: items[? key] });
+        }
+        return result;
+    };
+    
+    function GetItemCount() {
+        return ds_map_size(items);
+    };
+    
+    function GetTotalItemCount() {
+        var total = 0;
+        var keys = ds_map_keys_to_array(items);
+        for (var i = 0; i < array_length(keys); i++) {
+            total += items[? keys[i]];
+        }
+        return total;
+    };
+    
+    function IsFull() {
+        return ds_map_size(items) >= maxSlots;
+    };
+    
+    //  Configuration
+    function SetMaxSlots(slots) {
+        maxSlots = slots;
+        return self;
+    };
+    
+    function SetMaxStackSize(size) {
+        maxStackSize = size;
+        return self;
+    };
+    
+    //  Utility
+    function Clear() {
+        ds_map_clear(items);
+        return self;
+    };
+    
+    function Serialize() {
+        var data = {};
+        var keys = ds_map_keys_to_array(items);
+        for (var i = 0; i < array_length(keys); i++) {
+            var key = keys[i];
+            data[$ key] = items[? key];
+        }
+        return data;
+    };
+    
+    function Deserialize(_data) {
+        Clear();
+        var keys = variable_struct_get_names(_data);
+        for (var i = 0; i < array_length(keys); i++) {
+            var key = keys[i];
+            items[? key] = _data[$ key];
+        }
+        return self;
+    };
+    
+    function Free() {
+        ds_map_destroy_gmu(items);
+    };
+    
+    toString = function() {
+        return $"SimpleInventory: {GetItemCount()} types, {GetTotalItemCount()} total items";
+    };
+}
+
+function SimpleCurrency() constructor { //  SimpleCurrency - Basic currency system (supports multiple currencies)
+    currencies = ds_map_create_gmu();    // currencyId -> amount
+    defaultCurrency = "gold";
+    
+    // Callbacks
+    onCurrencyChanged = undefined;       // function(currencyId, oldAmount, newAmount, delta)
+    
+    //  Currency management
+    function Add(amount, currencyId = undefined) {
+        currencyId = currencyId ?? defaultCurrency;
+        if (amount <= 0) return false;
+        
+        var oldAmount = Get(currencyId);
+        var newAmount = oldAmount + amount;
+        currencies[? currencyId] = newAmount;
+        
+        if (onCurrencyChanged != undefined) {
+            onCurrencyChanged(currencyId, oldAmount, newAmount, amount);
+        }
+        
+        return true;
+    };
+    
+    function Spend(amount, currencyId = undefined) {
+        currencyId = currencyId ?? defaultCurrency;
+        if (amount <= 0) return false;
+        if (!Has(amount, currencyId)) return false;
+        
+        var oldAmount = Get(currencyId);
+        var newAmount = oldAmount - amount;
+        currencies[? currencyId] = newAmount;
+        
+        if (onCurrencyChanged != undefined) {
+            onCurrencyChanged(currencyId, oldAmount, newAmount, -amount);
+        }
+        
+        return true;
+    };
+    
+    function Set(amount, currencyId = undefined) {
+        currencyId = currencyId ?? defaultCurrency;
+        if (amount < 0) amount = 0;
+        
+        var oldAmount = Get(currencyId);
+        currencies[? currencyId] = amount;
+        
+        if (onCurrencyChanged != undefined) {
+            onCurrencyChanged(currencyId, oldAmount, amount, amount - oldAmount);
+        }
+        
+        return self;
+    };
+    
+    //  Queries
+    function Get(currencyId = undefined) {
+        currencyId = currencyId ?? defaultCurrency;
+        return ds_map_exists(currencies, currencyId) ? currencies[? currencyId] : 0;
+    };
+    
+    function Has(amount, currencyId = undefined) {
+        return Get(currencyId) >= amount;
+    };
+    
+    function GetAll() {
+        var result = {};
+        var keys = ds_map_keys_to_array(currencies);
+        for (var i = 0; i < array_length(keys); i++) {
+            var key = keys[i];
+            result[$ key] = currencies[? key];
+        }
+        return result;
+    };
+    
+    function GetCurrencyTypes() {
+        return ds_map_keys_to_array(currencies);
+    };
+    
+    //  Configuration
+    function SetDefaultCurrency(currencyId) {
+        defaultCurrency = currencyId;
+        return self;
+    };
+    
+    //  Utility
+    function Clear() {
+        ds_map_clear(currencies);
+        return self;
+    };
+    
+    function Serialize() {
+        var data = {};
+        var keys = ds_map_keys_to_array(currencies);
+        for (var i = 0; i < array_length(keys); i++) {
+            var key = keys[i];
+            data[$ key] = currencies[? key];
+        }
+        return data;
+    };
+    
+    function Deserialize(_data) {
+        Clear();
+        var keys = variable_struct_get_names(_data);
+        for (var i = 0; i < array_length(keys); i++) {
+            var key = keys[i];
+            currencies[? key] = _data[$ key];
+        }
+        return self;
+    };
+    
+    function Free() {
+        ds_map_destroy_gmu(currencies);
+    };
+    
+    toString = function() {
+        var str = "SimpleCurrency: ";
+        var keys = ds_map_keys_to_array(currencies);
+        for (var i = 0; i < array_length(keys); i++) {
+            str += $"{keys[i]}={currencies[? keys[i]]}";
+            if (i < array_length(keys) - 1) str += ", ";
+        }
+        return str;
+    };
+}
+
+function SimplePlayer() constructor { //  SimplePlayer - Basic player stats for quest system
+    x = 0;
+    y = 0;
+    level = 1;
+    exp = 0;
+    expToNextLevel = 100;
+    skillPoints = 0;
+    
+    // Callbacks
+    onLevelUp = undefined;               // function(oldLevel, newLevel)
+    onExpGained = undefined;             // function(amount, currentExp, expToNext)
+    
+    //  Position
+    function SetPosition(_x, _y) {
+        x = _x;
+        y = _y;
+        return self;
+    };
+    
+    //  Level & Experience
+    function GetLevel() {
+        return level;
+    };
+    
+    function AddExperience(amount) {
+        if (amount <= 0) return self;
+        
+        exp += amount;
+        
+        if (onExpGained != undefined) {
+            onExpGained(amount, exp, expToNextLevel);
+        }
+        
+        // Check for level up
+        while (exp >= expToNextLevel) {
+            LevelUp();
+        }
+        
+        return self;
+    };
+    
+    function LevelUp() {
+        var oldLevel = level;
+        exp -= expToNextLevel;
+        level++;
+        expToNextLevel = CalculateExpForLevel(level + 1);
+        skillPoints++;
+        
+        if (onLevelUp != undefined) {
+            onLevelUp(oldLevel, level);
+        }
+        
+        return self;
+    };
+    
+    function CalculateExpForLevel(targetLevel) {
+        // Simple formula: 100 * level
+        return targetLevel * 100;
+    };
+    
+    function SetLevel(_level) {
+        level = max(1, _level);
+        expToNextLevel = CalculateExpForLevel(level + 1);
+        return self;
+    };
+    
+    function GetExpProgress() {
+        return exp / expToNextLevel;
+    };
+    
+    //  Skill Points
+    function AddSkillPoint(amount = 1) {
+        skillPoints += amount;
+        return self;
+    };
+    
+    function SpendSkillPoint(amount = 1) {
+        if (skillPoints >= amount) {
+            skillPoints -= amount;
+            return true;
+        }
+        return false;
+    };
+    
+    function GetSkillPoints() {
+        return skillPoints;
+    };
+    
+    //  Serialization
+    function Serialize() {
+        return {
+            x: x,
+            y: y,
+            level: level,
+            exp: exp,
+            expToNextLevel: expToNextLevel,
+            skillPoints: skillPoints
+        };
+    };
+    
+    function Deserialize(_data) {
+        x = _data.x ?? 0;
+        y = _data.y ?? 0;
+        level = _data.level ?? 1;
+        exp = _data.exp ?? 0;
+        expToNextLevel = _data.expToNextLevel ?? 100;
+        skillPoints = _data.skillPoints ?? 0;
+        return self;
+    };
+    
+    toString = function() {
+        return $"SimplePlayer: Lvl {level} ({exp}/{expToNextLevel} XP), {skillPoints} SP";
     };
 }
