@@ -80,7 +80,7 @@ function Camera(_index, _resolution, _object = -1, _position = {x:0, y:0}, _bord
     
     parallax_layers = [];
     
-    post_process = ds_map_create_gmu();
+    post_process = ds_map_create();
     pp_enabled = false;
     
     bounds_enabled = false;
@@ -541,7 +541,7 @@ function Camera(_index, _resolution, _object = -1, _position = {x:0, y:0}, _bord
     // cleanup
     function Free() {
         camera_destroy(camera);
-        ds_map_destroy_gmu(post_process);
+        ds_map_destroy(post_process);
         parallax_layers = [];
     };
     
@@ -577,7 +577,7 @@ function Camera(_index, _resolution, _object = -1, _position = {x:0, y:0}, _bord
 }
 
 function CameraManager() constructor { // for multiple cameras
-    cameras = ds_list_create_gmu();
+    cameras = ds_list_create();
     active_camera = 0;
     
     function Add(camera) {
@@ -608,56 +608,9 @@ function CameraManager() constructor { // for multiple cameras
         for (var i = 0; i < ds_list_size(cameras); i++) {
             cameras[| i].Free();
         }
-        ds_list_destroy_gmu(cameras);
+        ds_list_destroy(cameras);
     };
 }
-
-//  Animation System
-//function Animation(_animation, _speed = 1, _onUpdate = undefined) constructor {
-//    animation = _animation;
-//    speed = _speed;
-//    onUpdate = _onUpdate;
-//
-//    function Update(_object) {
-//        _object.sprite_index = animation;
-//        _object.image_speed = speed;
-//        if (onUpdate != undefined) onUpdate(self, _object);
-//    };
-//};
-//
-//function AnimPack(_object) constructor {
-//    object = _object;
-//    animations = ds_map_create_gmu();
-//    current = undefined;
-//
-//    function Add(name, anim) {
-//        animations[? name] = anim;
-//        return self;
-//    };
-//    function Get(name) {
-//        return animations[? name];
-//    };
-//    function Exists(name) {
-//        return ds_map_exists(animations, name);
-//    };
-//    function Set(name) {
-//        if (!Exists(name)) return self;
-//        current = animations[? name];
-//        return self;
-//    };
-//    function Update() {
-//        if (current != undefined) current.Update(object);
-//        return self;
-//    };
-//    function Free() {
-//        var keys = ds_map_keys_to_array(animations);
-//        for (var i = 0; i < array_length(keys); i++) delete animations[? keys[i]];
-//        ds_map_destroy_gmu(animations);
-//    };
-//};
-
-//  Enhanced Animation System
-//  Supports: Blending, events, sequences, and advanced playback control
 
 enum ANIM_PLAYBACK {
     NORMAL,
@@ -707,7 +660,7 @@ function Animation(_animation, _speed = 1, _onUpdate = undefined) constructor {
     blend_duration = 0.0;
     blend_timer = 0.0;
     
-    events = ds_map_create_gmu();
+    events = ds_map_create();
     
     on_start = undefined;
     on_frame = undefined;
@@ -1041,14 +994,14 @@ function Animation(_animation, _speed = 1, _onUpdate = undefined) constructor {
     };
     
     function Free() {
-        ds_map_destroy_gmu(events);
+        ds_map_destroy(events);
     };
 }
 
 // Animation Pack
 function AnimPack(_object) constructor {
     object = _object;
-    animations = ds_map_create_gmu();
+    animations = ds_map_create();
     current = undefined;
     previous = undefined;
     blend_animation = undefined;
@@ -1056,7 +1009,7 @@ function AnimPack(_object) constructor {
     blend_duration = 0;
     default_anim = undefined;
     
-    queue = ds_queue_create_gmu();
+    queue = ds_queue_create();
     queue_enabled = false;
     
     on_anim_changed = undefined;
@@ -1350,8 +1303,8 @@ function AnimPack(_object) constructor {
             delete animations[? keys[i]];
         }
         
-        ds_map_destroy_gmu(animations);
-        ds_queue_destroy_gmu(queue);
+        ds_map_destroy(animations);
+        ds_queue_destroy(queue);
     };
 }
 
