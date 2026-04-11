@@ -498,7 +498,7 @@ function CommandChain() constructor {
     };
 };
 
-function Commands() { // helper to create common command types
+function Commands() constructor { // helper to create common command types
     function PropertyChange(target, property, newValue) {
         var oldValue = undefined;
         var isCaptured = false;
