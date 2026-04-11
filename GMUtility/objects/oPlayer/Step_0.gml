@@ -1,6 +1,5 @@
-if (vspeed > 0) { // Moving down
+if (vspeed > 0) {
     if (place_meeting(x, y + vspeed, oBlock)) {
-        // Move to exact contact point
         while (!place_meeting(x, y + sign(vspeed), oBlock)) {
             y += sign(vspeed);
         }
@@ -9,7 +8,7 @@ if (vspeed > 0) { // Moving down
     } else {
         vspeed += grav;
     }
-} else { // Moving up or not moving
+} else {
     if (place_meeting(x, y + vspeed, oBlock)) {
         vspeed = 0;
 		canJump = true;

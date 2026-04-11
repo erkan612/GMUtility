@@ -1,65 +1,616 @@
 //  Camera System
-function Camera(_index, _resolution, _object = -1, _position = {x:0,y:0}, _border = {x:0,y:0}, _angle = 0, _spd = {x:-1,y:-1}) constructor {
+enum CAMERA_EASE {
+    LINEAR,
+    QUAD_IN,
+    QUAD_OUT,
+    QUAD_IN_OUT,
+    CUBIC_IN,
+    CUBIC_OUT,
+    CUBIC_IN_OUT,
+    ELASTIC_OUT,
+    BACK_OUT,
+    BOUNCE_OUT,
+    SINE_IN_OUT
+}
+
+enum CAMERA_SHAKE_TYPE {
+    RANDOM,
+    PERLIN,
+    DIRECTIONAL,
+    CIRCULAR
+}
+
+enum CAMERA_FOLLOW_MODE {
+    LOCKED,
+    SMOOTH,
+    PREDICTIVE,
+    ZONE,
+    PLATFORMER
+}
+
+function Camera(_index, _resolution, _object = -1, _position = {x:0, y:0}, _border = {x:0, y:0}, _angle = 0, _spd = {x:-1, y:-1}) constructor {
     index = _index;
     resolution = _resolution;
     object = _object;
-    position = _position;
+    position = {x: _position.x, y: _position.y};
+    target_position = {x: _position.x, y: _position.y};
     angle = _angle;
+    target_angle = _angle;
     spd = _spd;
     border = _border;
-    shake_magnitude = 0;
-    shake_decay = 0.9;
-    shake_offset_x = 0;
-    shake_offset_y = 0;
+    
+    // follow
+    follow_mode = CAMERA_FOLLOW_MODE.SMOOTH;
+    follow_speed = 0.1;
+    follow_deadzone = {x: 0, y: 0, w: 0, h: 0};
+    follow_predict = 0;
+    follow_offset = {x: 0, y: 0};
+    
+    // zoom
     zoom = 1;
     target_zoom = 1;
     zoom_speed = 0.1;
-
+    min_zoom = 0.1;
+    max_zoom = 10;
+    zoom_ease = CAMERA_EASE.LINEAR;
+    
+    // shake
+    shake_trauma = 0;
+    shake_decay = 0.8;
+    shake_offset_x = 0;
+    shake_offset_y = 0;
+    shake_type = CAMERA_SHAKE_TYPE.PERLIN;
+    shake_direction = 0;
+    
+    // effects
+    rotation_shake = 0;
+    rotation_shake_power = 0;
+    chromatic_aberration = 0;
+    vignette_intensity = 0;
+    motion_blur = 0;
+    
+    // transitions
+    is_transitioning = false;
+    transition_timer = 0;
+    transition_duration = 0;
+    transition_start_pos = {x: 0, y: 0};
+    transition_start_zoom = 1;
+    transition_start_angle = 0;
+    transition_ease = CAMERA_EASE.QUAD_IN_OUT;
+    
+    parallax_layers = [];
+    
+    post_process = ds_map_create_gmu();
+    pp_enabled = false;
+    
+    bounds_enabled = false;
+    bounds = {x: -10000, y: -10000, w: 20000, h: 20000};
+    
+    view_matrix = matrix_build_identity();
+    projection_matrix = matrix_build_identity();
+    
+    update_frequency = 1;
+    frame_counter = 0;
+    
+    on_update = undefined;
+    on_shake = undefined;
+    on_transition_complete = undefined;
+    
     camera = camera_create_view(position.x, position.y, resolution.width, resolution.height, angle, object, spd.x, spd.y, border.x, border.y);
     view_enabled = true;
     view_visible[index] = true;
-
+    
     function Set() {
         view_set_camera(index, camera);
         return self;
     };
-    function Shake(magnitude, decay = 0.9) {
-        shake_magnitude = magnitude;
-        shake_decay = decay;
+    
+	// follow behaviour
+    function FollowObject(obj, speed = 0.1, mode = CAMERA_FOLLOW_MODE.SMOOTH) {
+        object = obj;
+        follow_speed = speed;
+        follow_mode = mode;
         return self;
     };
-    function SetZoom(target, speed = 0.1) {
-        target_zoom = target;
-        zoom_speed = speed;
+    
+    function SetFollowOffset(x, y) {
+        follow_offset = {x: x, y: y};
         return self;
     };
-    function Update() {
-        if (abs(zoom - target_zoom) > 0.01) zoom = lerp(zoom, target_zoom, zoom_speed);
-        else zoom = target_zoom;
-
-        if (shake_magnitude > 0) {
-            shake_offset_x = random_range(-shake_magnitude, shake_magnitude);
-            shake_offset_y = random_range(-shake_magnitude, shake_magnitude);
-            shake_magnitude *= shake_decay;
-            if (shake_magnitude < 0.1) shake_magnitude = 0;
-        } else {
-            shake_offset_x = 0;
-            shake_offset_y = 0;
+    
+    function SetDeadzone(x, y, w, h) {
+        follow_deadzone = {x: x, y: y, w: w, h: h};
+        return self;
+    };
+    
+    function SetPredictiveFollow(frames_ahead) {
+        follow_predict = frames_ahead;
+        return self;
+    };
+    
+    // position
+    function SetPosition(x, y, instant = false) {
+        target_position = {x: x, y: y};
+        if (instant) {
+            position.x = x;
+            position.y = y;
         }
-
+        return self;
+    };
+    
+    function MoveTo(x, y, duration = 1, ease = CAMERA_EASE.QUAD_IN_OUT) {
+        is_transitioning = true;
+        transition_timer = 0;
+        transition_duration = duration;
+        transition_start_pos = {x: position.x, y: position.y};
+        transition_start_zoom = zoom;
+        transition_start_angle = angle;
+        transition_ease = ease;
+        target_position = {x: x, y: y};
+        return self;
+    };
+    
+    function LookAt(x, y, duration = 1) {
+        return MoveTo(x, y, duration);
+    };
+    
+    // zoom
+    function SetZoom(target, speed = 0.1, ease = CAMERA_EASE.LINEAR) {
+        target_zoom = clamp(target, min_zoom, max_zoom);
+        zoom_speed = speed;
+        zoom_ease = ease;
+        return self;
+    };
+    
+    function ZoomTo(target, duration = 1, ease = CAMERA_EASE.QUAD_IN_OUT) {
+        is_transitioning = true;
+        transition_timer = 0;
+        transition_duration = duration;
+        transition_start_pos = {x: position.x, y: position.y};
+        transition_start_zoom = zoom;
+        transition_start_angle = angle;
+        transition_ease = ease;
+        target_zoom = clamp(target, min_zoom, max_zoom);
+        return self;
+    };
+    
+    function SetZoomLimits(min_zoom_val, max_zoom_val) {
+        min_zoom = min_zoom_val;
+        max_zoom = max_zoom_val;
+        return self;
+    };
+    
+    // shake
+    function Shake(trauma = 1, decay = 0.8, type = CAMERA_SHAKE_TYPE.PERLIN) {
+        shake_trauma = min(shake_trauma + trauma, 1);
+        shake_decay = decay;
+        shake_type = type;
+        
+        if (on_shake != undefined) {
+            on_shake(trauma);
+        }
+        
+        return self;
+    };
+    
+    function DirectionalShake(trauma, direction, decay = 0.8) {
+        shake_trauma = min(shake_trauma + trauma, 1);
+        shake_decay = decay;
+        shake_type = CAMERA_SHAKE_TYPE.DIRECTIONAL;
+        shake_direction = direction;
+        return self;
+    };
+    
+    function StopShake() {
+        shake_trauma = 0;
+        shake_offset_x = 0;
+        shake_offset_y = 0;
+        rotation_shake_power = 0;
+        return self;
+    };
+    
+    // boundries
+    function EnableBounds(x, y, w, h) {
+        bounds_enabled = true;
+        bounds = {x: x, y: y, w: w, h: h};
+        return self;
+    };
+    
+    function DisableBounds() {
+        bounds_enabled = false;
+        return self;
+    };
+    
+    // parallax
+    function AddParallaxLayer(layer_object, factor_x, factor_y) {
+        array_push(parallax_layers, {
+            obj: layer_object,
+            factor_x: factor_x,
+            factor_y: factor_y,
+            offset_x: 0,
+            offset_y: 0
+        });
+        return self;
+    };
+    
+    function RemoveParallaxLayer(layer_object) {
+        for (var i = 0; i < array_length(parallax_layers); i++) {
+            if (parallax_layers[i].obj == layer_object) {
+                array_delete(parallax_layers, i, 1);
+                break;
+            }
+        }
+        return self;
+    };
+    
+    // post processing
+    function EnablePostProcess(enabled = true) {
+        pp_enabled = enabled;
+        return self;
+    };
+    
+    function SetChromaticAberration(intensity) {
+        chromatic_aberration = clamp(intensity, 0, 1);
+        return self;
+    };
+    
+    function SetVignette(intensity) {
+        vignette_intensity = clamp(intensity, 0, 1);
+        return self;
+    };
+    
+    function SetMotionBlur(amount) {
+        motion_blur = clamp(amount, 0, 1);
+        return self;
+    };
+    
+    // utlity
+    function WorldToScreen(world_x, world_y) {
+        var view_x = camera_get_view_x(camera);
+        var view_y = camera_get_view_y(camera);
+        var view_w = camera_get_view_width(camera);
+        var view_h = camera_get_view_height(camera);
+        
+        var screen_x = (world_x - view_x) * (resolution.width / view_w);
+        var screen_y = (world_y - view_y) * (resolution.height / view_h);
+        
+        return {x: screen_x, y: screen_y};
+    };
+    
+    function ScreenToWorld(screen_x, screen_y) {
+        var view_x = camera_get_view_x(camera);
+        var view_y = camera_get_view_y(camera);
+        var view_w = camera_get_view_width(camera);
+        var view_h = camera_get_view_height(camera);
+        
+        var world_x = view_x + (screen_x / resolution.width) * view_w;
+        var world_y = view_y + (screen_y / resolution.height) * view_h;
+        
+        return {x: world_x, y: world_y};
+    };
+    
+    function IsVisible(x, y, w, h) {
+        var view_x = position.x - (resolution.width / zoom) / 2;
+        var view_y = position.y - (resolution.height / zoom) / 2;
+        var view_w = resolution.width / zoom;
+        var view_h = resolution.height / zoom;
+        
+        return !(x + w < view_x || x > view_x + view_w || 
+                 y + h < view_y || y > view_y + view_h);
+    };
+    
+    function GetViewRect() {
+        return {
+            x: position.x - (resolution.width / zoom) / 2,
+            y: position.y - (resolution.height / zoom) / 2,
+            w: resolution.width / zoom,
+            h: resolution.height / zoom
+        };
+    };
+    
+    // callbacks
+    function SetOnUpdate(callback) {
+        on_update = callback;
+        return self;
+    };
+    
+    function SetOnShake(callback) {
+        on_shake = callback;
+        return self;
+    };
+    
+    function SetOnTransitionComplete(callback) {
+        on_transition_complete = callback;
+        return self;
+    };
+    
+    // easing
+    function Ease(t, type) {
+        switch(type) {
+            case CAMERA_EASE.QUAD_IN: return t * t;
+            case CAMERA_EASE.QUAD_OUT: return 1 - (1 - t) * (1 - t);
+            case CAMERA_EASE.QUAD_IN_OUT: 
+                return t < 0.5 ? 2 * t * t : 1 - power(-2 * t + 2, 2) / 2;
+            case CAMERA_EASE.CUBIC_IN: return t * t * t;
+            case CAMERA_EASE.CUBIC_OUT: return 1 - power(1 - t, 3);
+            case CAMERA_EASE.CUBIC_IN_OUT:
+                return t < 0.5 ? 4 * t * t * t : 1 - power(-2 * t + 2, 3) / 2;
+            case CAMERA_EASE.ELASTIC_OUT:
+                var c4 = (2 * pi) / 3;
+                return t == 0 ? 0 : t == 1 ? 1 : power(2, -10 * t) * sin((t * 10 - 0.75) * c4) + 1;
+            case CAMERA_EASE.BACK_OUT:
+                var c1 = 1.70158, c3 = c1 + 1;
+                return 1 + c3 * power(t - 1, 3) + c1 * power(t - 1, 2);
+            case CAMERA_EASE.BOUNCE_OUT:
+                var n1 = 7.5625, d1 = 2.75;
+                if (t < 1 / d1) return n1 * t * t;
+                else if (t < 2 / d1) { t -= 1.5 / d1; return n1 * t * t + 0.75; }
+                else if (t < 2.5 / d1) { t -= 2.25 / d1; return n1 * t * t + 0.9375; }
+                else { t -= 2.625 / d1; return n1 * t * t + 0.984375; }
+            case CAMERA_EASE.SINE_IN_OUT:
+                return -(cos(pi * t) - 1) / 2;
+            default:
+                return t;
+        }
+    };
+    
+    // update
+    function Update() {
+        frame_counter++;
+        if (frame_counter % update_frequency != 0) return self;
+        
+        if (object != -1 && instance_exists(object)) {
+            var target_x = object.x + follow_offset.x;
+            var target_y = object.y + follow_offset.y;
+            
+            if (follow_predict > 0) {
+                target_x += object.hspeed * follow_predict;
+                target_y += object.vspeed * follow_predict;
+            }
+            
+            switch(follow_mode) {
+                case CAMERA_FOLLOW_MODE.LOCKED:
+                    target_position.x = target_x;
+                    target_position.y = target_y;
+                    break;
+                    
+                case CAMERA_FOLLOW_MODE.SMOOTH:
+                    target_position.x = target_x;
+                    target_position.y = target_y;
+                    break;
+                    
+                case CAMERA_FOLLOW_MODE.ZONE:
+                    var dz = follow_deadzone;
+                    if (abs(target_x - position.x) > dz.w/2) {
+                        target_position.x = target_x;
+                    }
+                    if (abs(target_y - position.y) > dz.h/2) {
+                        target_position.y = target_y;
+                    }
+                    break;
+                    
+                case CAMERA_FOLLOW_MODE.PLATFORMER:
+                    target_position.x = target_x + object.hspeed * 30;
+                    target_position.y = target_y + object.vspeed * 10;
+                    break;
+            }
+        }
+        
+        if (is_transitioning) {
+            transition_timer += 1 / game_get_speed(gamespeed_fps);
+            var t = min(transition_timer / transition_duration, 1);
+            var eased = Ease(t, transition_ease);
+            
+            position.x = lerp(transition_start_pos.x, target_position.x, eased);
+            position.y = lerp(transition_start_pos.y, target_position.y, eased);
+            zoom = lerp(transition_start_zoom, target_zoom, eased);
+            angle = lerp(transition_start_angle, target_angle, eased);
+            
+            if (t >= 1) {
+                is_transitioning = false;
+                if (on_transition_complete != undefined) {
+                    on_transition_complete();
+                }
+            }
+        } else {
+            if (follow_mode == CAMERA_FOLLOW_MODE.SMOOTH) {
+                position.x = lerp(position.x, target_position.x, follow_speed);
+                position.y = lerp(position.y, target_position.y, follow_speed);
+            } else {
+                position.x = target_position.x;
+                position.y = target_position.y;
+            }
+            
+            if (abs(zoom - target_zoom) > 0.001) {
+                var t = Ease(zoom_speed, zoom_ease);
+                zoom = lerp(zoom, target_zoom, t);
+            } else {
+                zoom = target_zoom;
+            }
+        }
+        
+        if (bounds_enabled) {
+            var view_w = resolution.width / zoom;
+            var view_h = resolution.height / zoom;
+            position.x = clamp(position.x, bounds.x + view_w/2, bounds.x + bounds.w - view_w/2);
+            position.y = clamp(position.y, bounds.y + view_h/2, bounds.y + bounds.h - view_h/2);
+        }
+        
+        UpdateShake();
+        
+        UpdateParallax();
+        
         var view_w = resolution.width / zoom;
         var view_h = resolution.height / zoom;
         var view_x = position.x + shake_offset_x - view_w/2;
         var view_y = position.y + shake_offset_y - view_h/2;
+        
         camera_set_view_pos(camera, view_x, view_y);
         camera_set_view_size(camera, view_w, view_h);
-        camera_set_view_angle(camera, angle);
+        camera_set_view_angle(camera, angle + rotation_shake_power);
+        
+        if (pp_enabled) {
+            ApplyPostProcess();
+        }
+        
+        if (on_update != undefined) {
+            on_update(self);
+        }
+        
         return self;
     };
+    
+    function UpdateShake() {
+        if (shake_trauma > 0) {
+            var power = shake_trauma * shake_trauma;
+            
+            switch(shake_type) {
+                case CAMERA_SHAKE_TYPE.RANDOM:
+                    shake_offset_x = random_range(-power, power) * 10;
+                    shake_offset_y = random_range(-power, power) * 10;
+                    break;
+                    
+                case CAMERA_SHAKE_TYPE.PERLIN:
+                    var time = current_time / 100;
+                    shake_offset_x = (Noise.ValueNoise2D([time, 0]) * 2 - 1) * power * 15;
+                    shake_offset_y = (Noise.ValueNoise2D([0, time]) * 2 - 1) * power * 15;
+                    break;
+                    
+                case CAMERA_SHAKE_TYPE.DIRECTIONAL:
+                    var dir_x = cos(shake_direction);
+                    var dir_y = sin(shake_direction);
+                    var perp_x = -dir_y;
+                    var perp_y = dir_x;
+                    shake_offset_x = (dir_x * random_range(-1, 1) + perp_x * random_range(-0.5, 0.5)) * power * 10;
+                    shake_offset_y = (dir_y * random_range(-1, 1) + perp_y * random_range(-0.5, 0.5)) * power * 10;
+                    break;
+                    
+                case CAMERA_SHAKE_TYPE.CIRCULAR:
+                    var ang = random(360);
+                    shake_offset_x = cos(ang) * power * 10;
+                    shake_offset_y = sin(ang) * power * 10;
+                    break;
+            }
+            
+            rotation_shake_power = random_range(-power, power) * 5;
+            
+            shake_trauma = max(shake_trauma - shake_decay * 0.016, 0);
+            
+            if (shake_trauma <= 0.01) {
+                shake_trauma = 0;
+                shake_offset_x = 0;
+                shake_offset_y = 0;
+                rotation_shake_power = 0;
+            }
+        } else {
+            shake_offset_x = 0;
+            shake_offset_y = 0;
+            rotation_shake_power = 0;
+        }
+    };
+    
+    function UpdateParallax() {
+        var base_x = position.x;
+        var base_y = position.y;
+        
+        for (var i = 0; i < array_length(parallax_layers); i++) {
+            var _layer = parallax_layers[i];
+            if (instance_exists(_layer.obj)) {
+                _layer.obj.x = base_x * _layer.factor_x + _layer.offset_x;
+                _layer.obj.y = base_y * _layer.factor_y + _layer.offset_y;
+            }
+        }
+    };
+    
+    function ApplyPostProcess() {
+        if (chromatic_aberration > 0) {
+            // TODO
+        }
+        
+        if (vignette_intensity > 0) {
+            // TODO
+        }
+        
+        if (motion_blur > 0) {
+            // TODO
+        }
+		
+		// TODO: add more
+    };
+    
+    // cleanup
     function Free() {
         camera_destroy(camera);
+        ds_map_destroy_gmu(post_process);
+        parallax_layers = [];
     };
-};
+    
+    // debug
+    function DebugDraw() {
+        var rect = GetViewRect();
+        draw_rectangle(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h, true);
+        
+        if (bounds_enabled) {
+            draw_rectangle(bounds.x, bounds.y, bounds.x + bounds.w, bounds.y + bounds.h, true);
+        }
+        
+        if (follow_mode == CAMERA_FOLLOW_MODE.ZONE && follow_deadzone.w > 0) {
+            var dz = follow_deadzone;
+            draw_rectangle(position.x - dz.w/2, position.y - dz.h/2, 
+                          position.x + dz.w/2, position.y + dz.h/2, true);
+        }
+        
+        return self;
+    };
+    
+    function GetInfo() {
+        return {
+            position: position,
+            zoom: zoom,
+            angle: angle,
+            shake_trauma: shake_trauma,
+            is_transitioning: is_transitioning,
+            follow_mode: follow_mode,
+            view_rect: GetViewRect()
+        };
+    };
+}
+
+function CameraManager() constructor { // for multiple cameras
+    cameras = ds_list_create_gmu();
+    active_camera = 0;
+    
+    function Add(camera) {
+        ds_list_add(cameras, camera);
+        return self;
+    };
+    
+    function SetActive(index) {
+        if (index >= 0 && index < ds_list_size(cameras)) {
+            active_camera = index;
+            cameras[| index].Set();
+        }
+        return self;
+    };
+    
+    function GetActive() {
+        return cameras[| active_camera];
+    };
+    
+    function UpdateAll() {
+        for (var i = 0; i < ds_list_size(cameras); i++) {
+            cameras[| i].Update();
+        }
+        return self;
+    };
+    
+    function Free() {
+        for (var i = 0; i < ds_list_size(cameras); i++) {
+            cameras[| i].Free();
+        }
+        ds_list_destroy_gmu(cameras);
+    };
+}
 
 //  Animation System
 function Animation(_animation, _speed = 1, _onUpdate = undefined) constructor {

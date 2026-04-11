@@ -317,19 +317,19 @@ function GenerateNoise() constructor {
     };
     
 	// utility stuff
-    function GenerateMap(width, height, noiseType = "perlin", params = {}) {
-        var map = ds_grid_create_gmu(width, height);
+    function GenerateMap(width, height, noiseType = "perlin", params = {}) { // params = { seed: real, scale: real, octaves: real, fractal(optional): string("fbm", "turbulence", "ridge", "warp") - default is Noise, lacunarity(optional): real (only used if fractal is set) }
+        var map = array_create(width, array_create(height, 0));
         var seed = params[$ "seed"] ?? 0;
         var scale = params[$ "scale"] ?? 0.1;
         var octaves = params[$ "octaves"] ?? 4;
         
         var noiseFunc;
         switch(noiseType) {
-            case "value": noiseFunc = method(self, ValueNoise2D); break;
-            case "perlin": noiseFunc = method(self, PerlinNoise2D); break;
-            case "simplex": noiseFunc = method(self, SimplexNoise2D); break;
-            case "worley": noiseFunc = method(self, WorleyNoise2D); break;
-            default: noiseFunc = method(self, PerlinNoise2D);
+            case "value": noiseFunc = GenerateNoise.ValueNoise2D; break;
+            case "perlin": noiseFunc = GenerateNoise.PerlinNoise2D; break;
+            case "simplex": noiseFunc = GenerateNoise.SimplexNoise2D; break;
+            case "worley": noiseFunc = GenerateNoise.WorleyNoise2D; break;
+            default: noiseFunc = GenerateNoise.PerlinNoise2D;
         }
         
         for (var _y = 0; _y < height; _y++) {
@@ -352,7 +352,7 @@ function GenerateNoise() constructor {
                     value = noiseFunc([nx, ny], seed);
                 }
                 
-                ds_grid_set(map, _x, _y, value);
+				map[_x][_y] = value;
             }
         }
         
