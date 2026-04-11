@@ -337,7 +337,7 @@ function Camera(_index, _resolution, _object = -1, _position = {x:0, y:0}, _bord
                 return t < 0.5 ? 4 * t * t * t : 1 - power(-2 * t + 2, 3) / 2;
             case CAMERA_EASE.ELASTIC_OUT:
                 var c4 = (2 * pi) / 3;
-                return t == 0 ? 0 : t == 1 ? 1 : power(2, -10 * t) * sin((t * 10 - 0.75) * c4) + 1;
+                return t == 0 ? 0 : (t == 1 ? 1 : power(2, -10 * t) * sin((t * 10 - 0.75) * c4) + 1);
             case CAMERA_EASE.BACK_OUT:
                 var c1 = 1.70158, c3 = c1 + 1;
                 return 1 + c3 * power(t - 1, 3) + c1 * power(t - 1, 2);
@@ -462,18 +462,18 @@ function Camera(_index, _resolution, _object = -1, _position = {x:0, y:0}, _bord
     
     function UpdateShake() {
         if (shake_trauma > 0) {
-            var power = shake_trauma * shake_trauma;
+            var _power = shake_trauma * shake_trauma;
             
             switch(shake_type) {
                 case CAMERA_SHAKE_TYPE.RANDOM:
-                    shake_offset_x = random_range(-power, power) * 10;
-                    shake_offset_y = random_range(-power, power) * 10;
+                    shake_offset_x = random_range(-_power, _power) * 10;
+                    shake_offset_y = random_range(-_power, _power) * 10;
                     break;
                     
                 case CAMERA_SHAKE_TYPE.PERLIN:
                     var time = current_time / 100;
-                    shake_offset_x = (Noise.ValueNoise2D([time, 0]) * 2 - 1) * power * 15;
-                    shake_offset_y = (Noise.ValueNoise2D([0, time]) * 2 - 1) * power * 15;
+                    shake_offset_x = (Noise.ValueNoise2D([time, 0]) * 2 - 1) * _power * 15;
+                    shake_offset_y = (Noise.ValueNoise2D([0, time]) * 2 - 1) * _power * 15;
                     break;
                     
                 case CAMERA_SHAKE_TYPE.DIRECTIONAL:
@@ -481,18 +481,18 @@ function Camera(_index, _resolution, _object = -1, _position = {x:0, y:0}, _bord
                     var dir_y = sin(shake_direction);
                     var perp_x = -dir_y;
                     var perp_y = dir_x;
-                    shake_offset_x = (dir_x * random_range(-1, 1) + perp_x * random_range(-0.5, 0.5)) * power * 10;
-                    shake_offset_y = (dir_y * random_range(-1, 1) + perp_y * random_range(-0.5, 0.5)) * power * 10;
+                    shake_offset_x = (dir_x * random_range(-1, 1) + perp_x * random_range(-0.5, 0.5)) * _power * 10;
+                    shake_offset_y = (dir_y * random_range(-1, 1) + perp_y * random_range(-0.5, 0.5)) * _power * 10;
                     break;
                     
                 case CAMERA_SHAKE_TYPE.CIRCULAR:
                     var ang = random(360);
-                    shake_offset_x = cos(ang) * power * 10;
-                    shake_offset_y = sin(ang) * power * 10;
+                    shake_offset_x = cos(ang) * _power * 10;
+                    shake_offset_y = sin(ang) * _power * 10;
                     break;
             }
             
-            rotation_shake_power = random_range(-power, power) * 5;
+            rotation_shake_power = random_range(-_power, _power) * 5;
             
             shake_trauma = max(shake_trauma - shake_decay * 0.016, 0);
             
@@ -613,46 +613,745 @@ function CameraManager() constructor { // for multiple cameras
 }
 
 //  Animation System
+//function Animation(_animation, _speed = 1, _onUpdate = undefined) constructor {
+//    animation = _animation;
+//    speed = _speed;
+//    onUpdate = _onUpdate;
+//
+//    function Update(_object) {
+//        _object.sprite_index = animation;
+//        _object.image_speed = speed;
+//        if (onUpdate != undefined) onUpdate(self, _object);
+//    };
+//};
+//
+//function AnimPack(_object) constructor {
+//    object = _object;
+//    animations = ds_map_create_gmu();
+//    current = undefined;
+//
+//    function Add(name, anim) {
+//        animations[? name] = anim;
+//        return self;
+//    };
+//    function Get(name) {
+//        return animations[? name];
+//    };
+//    function Exists(name) {
+//        return ds_map_exists(animations, name);
+//    };
+//    function Set(name) {
+//        if (!Exists(name)) return self;
+//        current = animations[? name];
+//        return self;
+//    };
+//    function Update() {
+//        if (current != undefined) current.Update(object);
+//        return self;
+//    };
+//    function Free() {
+//        var keys = ds_map_keys_to_array(animations);
+//        for (var i = 0; i < array_length(keys); i++) delete animations[? keys[i]];
+//        ds_map_destroy_gmu(animations);
+//    };
+//};
+
+//  Enhanced Animation System
+//  Supports: Blending, events, sequences, and advanced playback control
+
+enum ANIM_PLAYBACK {
+    NORMAL,
+    REVERSE,
+    PING_PONG,
+    LOOP,
+    ONCE
+}
+
+enum ANIM_BLEND_MODE {
+    NONE,
+    CROSSFADE,
+    ADDITIVE,
+    OVERRIDE
+}
+
+enum ANIM_EVENT {
+    ON_START,
+    ON_FRAME,
+    ON_END,
+    ON_LOOP,
+    ON_PAUSE,
+    ON_RESUME
+}
+
 function Animation(_animation, _speed = 1, _onUpdate = undefined) constructor {
     animation = _animation;
     speed = _speed;
     onUpdate = _onUpdate;
-
-    function Update(_object) {
-        _object.sprite_index = animation;
-        _object.image_speed = speed;
-        if (onUpdate != undefined) onUpdate(self, _object);
+    
+    name = "unnamed";
+    frame_start = 0;
+    frame_end = -1;  // -1 means use sprite's frame count
+    playback_mode = ANIM_PLAYBACK.NORMAL;
+    loop_count = -1;  // -1 = infinite
+    current_loop = 0;
+    is_paused = false;
+    time_scale = 1.0;
+    
+    frame_duration = 1;  // frames per game frame (for frame-based timing)
+    frame_timer = 0;
+    current_frame = 0;
+    direction = 1;
+    
+    blend_weight = 1.0;
+    blend_mode = ANIM_BLEND_MODE.NONE;
+    blend_duration = 0.0;
+    blend_timer = 0.0;
+    
+    events = ds_map_create_gmu();
+    
+    on_start = undefined;
+    on_frame = undefined;
+    on_end = undefined;
+    on_loop = undefined;
+    
+    function Init() {
+        if (frame_end == -1) {
+            frame_end = sprite_get_number(animation) - 1;
+        }
+        current_frame = frame_start;
+        return self;
+    } Init();
+    
+    // config
+    function SetName(_name) {
+        name = _name;
+        return self;
     };
-};
+    
+    function SetFrameRange(start, _end) {
+        frame_start = start;
+        frame_end = _end >= 0 ? _end : sprite_get_number(animation) - 1;
+        current_frame = clamp(current_frame, frame_start, frame_end);
+        return self;
+    };
+    
+    function SetPlaybackMode(mode, loop_count_val = -1) {
+        playback_mode = mode;
+        loop_count = loop_count_val;
+        return self;
+    };
+    
+    function SetTimeScale(scale) {
+        time_scale = max(scale, 0);
+        return self;
+    };
+    
+    function SetFrameDuration(frames_per_image) {
+        frame_duration = max(frames_per_image, 0.1);
+        return self;
+    };
+    
+    // blending
+    function SetBlendWeight(weight) {
+        blend_weight = clamp(weight, 0, 1);
+        return self;
+    };
+    
+    function SetBlendMode(mode, duration = 0.3) {
+        blend_mode = mode;
+        blend_duration = duration;
+        blend_timer = 0;
+        return self;
+    };
+    
+    // event sys
+    function AddEvent(event_type, frame_or_callback, callback = undefined) {
+        if (!ds_map_exists(events, event_type)) {
+            events[? event_type] = [];
+        }
+        
+        var event_list = events[? event_type];
+        
+        if (event_type == ANIM_EVENT.ON_FRAME) {
+            array_push(event_list, {
+                frame: frame_or_callback,
+                callback: callback,
+                triggered: false
+            });
+        } else {
+            array_push(event_list, {
+                callback: frame_or_callback,
+                triggered: false
+            });
+        }
+        
+        return self;
+    };
+    
+    function ClearEvents(event_type = undefined) {
+        if (event_type != undefined) {
+            ds_map_delete(events, event_type);
+        } else {
+            ds_map_clear(events);
+        }
+        return self;
+    };
+    
+    function OnStart(callback) {
+        on_start = callback;
+        return self;
+    };
+    
+    function OnFrame(callback) {
+        on_frame = callback;
+        return self;
+    };
+    
+    function OnEnd(callback) {
+        on_end = callback;
+        return self;
+    };
+    
+    function OnLoop(callback) {
+        on_loop = callback;
+        return self;
+    };
+    
+    // control
+    function Play() {
+        is_paused = false;
+        return self;
+    };
+    
+    function Pause() {
+        is_paused = true;
+        TriggerEvents(ANIM_EVENT.ON_PAUSE);
+        return self;
+    };
+    
+    function Resume() {
+        is_paused = false;
+        TriggerEvents(ANIM_EVENT.ON_RESUME);
+        return self;
+    };
+    
+    function Stop() {
+        is_paused = true;
+        current_frame = frame_start;
+        frame_timer = 0;
+        return self;
+    };
+    
+    function Reset() {
+        current_frame = frame_start;
+        frame_timer = 0;
+        current_loop = 0;
+        direction = 1;
+        ResetFrameEvents();
+        return self;
+    };
+    
+    function JumpToFrame(frame) {
+        current_frame = clamp(frame, frame_start, frame_end);
+        frame_timer = 0;
+        return self;
+    };
+    
+    function JumpToProgress(progress) {
+        var total_frames = frame_end - frame_start + 1;
+        current_frame = frame_start + floor(progress * (total_frames - 1));
+        return self;
+    };
+    
+    // query
+    function GetCurrentFrame() {
+        return current_frame;
+    };
+    
+    function GetProgress() {
+        var total_frames = frame_end - frame_start;
+        return total_frames > 0 ? (current_frame - frame_start) / total_frames : 0;
+    };
+    
+    function IsPlaying() {
+        return !is_paused;
+    };
+    
+    function IsFinished() {
+        return playback_mode == ANIM_PLAYBACK.ONCE && 
+               current_loop >= 1 && 
+               current_frame == frame_end;
+    };
+    
+    function GetDuration() {
+        var total_frames = frame_end - frame_start + 1;
+        return (total_frames * frame_duration) / (speed * time_scale);
+    };
+    
+    // internal
+    function UpdateFrame() {
+        if (is_paused) return;
+        
+        frame_timer += (speed * time_scale);
+        
+        while (frame_timer >= frame_duration) {
+            frame_timer -= frame_duration;
+            AdvanceFrame();
+        }
+    };
+    
+    function AdvanceFrame() {
+        var prev_frame = current_frame;
+        
+        switch(playback_mode) {
+            case ANIM_PLAYBACK.NORMAL:
+                current_frame += direction;
+                break;
+                
+            case ANIM_PLAYBACK.REVERSE:
+                current_frame -= direction;
+                break;
+                
+            case ANIM_PLAYBACK.PING_PONG:
+                current_frame += direction;
+                if (current_frame >= frame_end || current_frame <= frame_start) {
+                    direction = -direction;
+                }
+                break;
+                
+            case ANIM_PLAYBACK.LOOP:
+                current_frame += direction;
+                if (current_frame > frame_end) {
+                    current_frame = frame_start;
+                    HandleLoop();
+                }
+                break;
+                
+            case ANIM_PLAYBACK.ONCE:
+                current_frame += direction;
+                if (current_frame > frame_end) {
+                    current_frame = frame_end;
+                    HandleEnd();
+                }
+                break;
+        }
+        
+        current_frame = clamp(current_frame, frame_start, frame_end);
+        
+        if (prev_frame != current_frame) {
+            TriggerFrameEvents(current_frame);
+            if (on_frame != undefined) {
+                on_frame(current_frame);
+            }
+        }
+    };
+    
+    function HandleLoop() {
+        current_loop++;
+        TriggerEvents(ANIM_EVENT.ON_LOOP);
+        
+        if (on_loop != undefined) {
+            on_loop(current_loop);
+        }
+        
+        if (loop_count > 0 && current_loop >= loop_count) {
+            playback_mode = ANIM_PLAYBACK.ONCE;
+        }
+        
+        ResetFrameEvents();
+    };
+    
+    function HandleEnd() {
+        is_paused = true;
+        TriggerEvents(ANIM_EVENT.ON_END);
+        
+        if (on_end != undefined) {
+            on_end();
+        }
+    };
+    
+    function TriggerEvents(event_type) {
+        if (!ds_map_exists(events, event_type)) return;
+        
+        var event_list = events[? event_type];
+        for (var i = 0; i < array_length(event_list); i++) {
+            var evt = event_list[i];
+            if (evt.callback != undefined) {
+                evt.callback(self);
+            }
+        }
+    };
+    
+    function TriggerFrameEvents(frame) {
+        if (!ds_map_exists(events, ANIM_EVENT.ON_FRAME)) return;
+        
+        var event_list = events[? ANIM_EVENT.ON_FRAME];
+        for (var i = 0; i < array_length(event_list); i++) {
+            var evt = event_list[i];
+            if (evt.frame == frame && !evt.triggered) {
+                evt.triggered = true;
+                if (evt.callback != undefined) {
+                    evt.callback(self, frame);
+                }
+            }
+        }
+    };
+    
+    function ResetFrameEvents() {
+        if (!ds_map_exists(events, ANIM_EVENT.ON_FRAME)) return;
+        
+        var event_list = events[? ANIM_EVENT.ON_FRAME];
+        for (var i = 0; i < array_length(event_list); i++) {
+            event_list[i].triggered = false;
+        }
+    };
+    
+    function _UpdateBlend(delta_time) {
+        if (blend_mode != ANIM_BLEND_MODE.NONE && blend_timer < blend_duration) {
+            blend_timer = min(blend_timer + delta_time, blend_duration);
+            
+            if (blend_mode == ANIM_BLEND_MODE.CROSSFADE) {
+                blend_weight = blend_timer / blend_duration;
+            }
+        }
+    };
+    
+    // update
+    function Update(_object, delta_time = 1) {
+        UpdateFrame();
+        _UpdateBlend(delta_time);
+        
+        if (_object != undefined) {
+            _object.sprite_index = animation;
+            _object.image_index = current_frame;
+            _object.image_speed = 0;  // controls frames manually
+            
+            if (blend_mode == ANIM_BLEND_MODE.ADDITIVE && blend_weight < 1) {
+                _object.image_alpha = blend_weight;
+            } else {
+                _object.image_alpha = 1;
+            }
+        }
+        
+        if (onUpdate != undefined) {
+            onUpdate(self, _object);
+        }
+        
+        return self;
+    };
+    
+    function Free() {
+        ds_map_destroy_gmu(events);
+    };
+}
 
+// Animation Pack
 function AnimPack(_object) constructor {
     object = _object;
     animations = ds_map_create_gmu();
     current = undefined;
-
-    function Add(name, anim) {
+    previous = undefined;
+    blend_animation = undefined;
+    blend_timer = 0;
+    blend_duration = 0;
+    default_anim = undefined;
+    
+    queue = ds_queue_create_gmu();
+    queue_enabled = false;
+    
+    on_anim_changed = undefined;
+    
+    function Add(name, anim_or_sprite, speed = 1) {
+        var anim;
+        if (is_struct(anim_or_sprite)) {
+            anim = anim_or_sprite;
+            anim.SetName(name);
+        } else {
+            anim = new Animation(anim_or_sprite, speed);
+            anim.SetName(name);
+        }
+        
         animations[? name] = anim;
+        
+        if (ds_map_size(animations) == 1) { // first is default
+            default_anim = name;
+        }
+        
         return self;
     };
+    
+    function AddRange(anim_map) {
+        var keys = variable_struct_get_names(anim_map);
+        for (var i = 0; i < array_length(keys); i++) {
+            var name = keys[i];
+            var data = anim_map[$ name];
+            
+            if (is_array(data)) {
+                Add(name, data[0], data[1]);
+            } else {
+                Add(name, data);
+            }
+        }
+        return self;
+    };
+    
+    // control
     function Get(name) {
         return animations[? name];
     };
+    
     function Exists(name) {
         return ds_map_exists(animations, name);
     };
-    function Set(name) {
+    
+    function Set(name, blend_duration_val = 0, blend_mode = ANIM_BLEND_MODE.CROSSFADE) {
+        if (!Exists(name)) {
+            show_debug_message($"AnimPack: Animation '{name}' not found");
+            return self;
+        }
+        
+        var new_anim = animations[? name];
+        
+        if (current == new_anim) return self;
+        
+        previous = current;
+        current = new_anim;
+        
+        current.Reset();
+        current.Play();
+        
+        if (blend_duration_val > 0 && previous != undefined) {
+            blend_animation = previous;
+            blend_timer = 0;
+            blend_duration = blend_duration_val;
+            current.SetBlendMode(blend_mode, blend_duration_val);
+        }
+        
+        if (on_anim_changed != undefined) {
+            on_anim_changed(name, previous != undefined ? previous.name : undefined);
+        }
+        
+        current.TriggerEvents(ANIM_EVENT.ON_START);
+        if (current.on_start != undefined) {
+            current.on_start(current);
+        }
+        
+        return self;
+    };
+    
+    function Play(name, blend = 0) {
+        Set(name, blend);
+        return self;
+    };
+    
+    function SetDefault(name) {
+        if (Exists(name)) {
+            default_anim = name;
+        }
+        return self;
+    };
+    
+    function PlayDefault(blend = 0) {
+        if (default_anim != undefined) {
+            Set(default_anim, blend);
+        }
+        return self;
+    };
+    
+    // queue
+    function EnableQueue(enabled = true) {
+        queue_enabled = enabled;
+        if (!enabled) {
+            ds_queue_clear(queue);
+        }
+        return self;
+    };
+    
+    function Queue(name, blend = 0) {
         if (!Exists(name)) return self;
-        current = animations[? name];
+        
+        ds_queue_enqueue(queue, {
+            name: name,
+            blend: blend
+        });
+        
         return self;
     };
-    function Update() {
-        if (current != undefined) current.Update(object);
+    
+    function ClearQueue() {
+        ds_queue_clear(queue);
         return self;
     };
+    
+    function PlayNextInQueue(blend = 0.2) {
+        if (ds_queue_empty(queue)) return self;
+        
+        var next = ds_queue_dequeue(queue);
+        Set(next.name, next.blend > 0 ? next.blend : blend);
+        
+        return self;
+    };
+    
+    // playback
+    function Pause() {
+        if (current != undefined) {
+            current.Pause();
+        }
+        return self;
+    };
+    
+    function Resume() {
+        if (current != undefined) {
+            current.Resume();
+        }
+        return self;
+    };
+    
+    function Stop() {
+        if (current != undefined) {
+            current.Stop();
+        }
+        return self;
+    };
+    
+    function SetSpeed(speed) {
+        if (current != undefined) {
+            current.speed = speed;
+        }
+        return self;
+    };
+    
+    function SetTimeScale(scale) {
+        if (current != undefined) {
+            current.SetTimeScale(scale);
+        }
+        return self;
+    };
+    
+    // query
+    function GetCurrent() {
+        return current;
+    };
+    
+    function GetCurrentName() {
+        return current != undefined ? current.name : undefined;
+    };
+    
+    function GetPrevious() {
+        return previous;
+    };
+    
+    function IsPlaying() {
+        return current != undefined && current.IsPlaying();
+    };
+    
+    function IsCurrent(name) {
+        return current != undefined && current.name == name;
+    };
+    
+    function GetProgress() {
+        return current != undefined ? current.GetProgress() : 0;
+    };
+    
+    function GetAllNames() {
+        return ds_map_keys_to_array(animations);
+    };
+    
+    // events
+    function OnAnimChanged(callback) {
+        on_anim_changed = callback;
+        return self;
+    };
+    
+    // update
+    function Update(delta_time = 1) {
+        if (current != undefined) {
+            current.Update(object, delta_time);
+            
+            if (current.IsFinished()) {
+                if (queue_enabled && !ds_queue_empty(queue)) {
+                    PlayNextInQueue(0.2);
+                } else if (default_anim != undefined && current.name != default_anim) {
+                    PlayDefault(0.3);
+                }
+            }
+        }
+        
+        if (blend_animation != undefined) {
+            blend_timer += delta_time;
+            if (blend_timer >= blend_duration) {
+                blend_animation = undefined;
+            }
+        }
+        
+        return self;
+    };
+    
+    // utility & debug
+    function CreateStateMachine() {
+        var sm = new StateMachine(GetCurrentName());
+        
+        var names = GetAllNames();
+        for (var i = 0; i < array_length(names); i++) {
+            var anim_name = names[i];
+            sm.AddState(anim_name,
+                function(data) {
+                    Set(anim_name, 0.2);
+                },
+                undefined,
+                undefined
+            );
+        }
+        
+        return sm;
+    };
+    
+    function ExportToJSON() {
+        var data = {
+            current: GetCurrentName(),
+            animations: {}
+        };
+        
+        var names = GetAllNames();
+        for (var i = 0; i < array_length(names); i++) {
+            var anim = Get(names[i]);
+            data.animations[$ names[i]] = {
+                sprite: anim.animation,
+                speed: anim.speed,
+                playback: anim.playback_mode,
+                frame_start: anim.frame_start,
+                frame_end: anim.frame_end
+            };
+        }
+        
+        return json_stringify(data);
+    };
+    
+    function DebugDraw(x, y) {
+        if (current == undefined) return;
+        
+        var info = $"Current: {current.name}\n";
+        info += $"Frame: {current.current_frame}/{current.frame_end}\n";
+        info += $"Progress: {round(current.GetProgress() * 100)}%\n";
+        info += $"Playing: {current.IsPlaying()}\n";
+        info += $"Queue: {ds_queue_size(queue)}";
+        
+        draw_text(x, y, info);
+    };
+    
+	// cleanup
     function Free() {
         var keys = ds_map_keys_to_array(animations);
-        for (var i = 0; i < array_length(keys); i++) delete animations[? keys[i]];
+        for (var i = 0; i < array_length(keys); i++) {
+            var anim = animations[? keys[i]];
+            if (anim != undefined) {
+                anim.Free();
+            }
+            delete animations[? keys[i]];
+        }
+        
         ds_map_destroy_gmu(animations);
+        ds_queue_destroy_gmu(queue);
     };
-};
+}
 
