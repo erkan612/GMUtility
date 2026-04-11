@@ -58,8 +58,8 @@ function AudioManager() constructor {
     active_music = ds_list_create();
     active_ambient = ds_list_create();
     
-    // sound instances pool
-    sound_pool = ds_queue_create();
+    // sound count tracking
+    active_count = 0;
     max_simultaneous_sounds = 32;
     
     // music system
@@ -81,6 +81,10 @@ function AudioManager() constructor {
     max_distance = 1000;
     rolloff_factor = 1.0;
     doppler_factor = 1.0;
+    
+    // 3D audio emitters (pool works for emitters)
+    emitter_pool = [];
+    emitter_pool_size = 32;
     
     // effects
     reverb_active = false;
@@ -117,6 +121,100 @@ function AudioManager() constructor {
             group_muted[? group_names[i]] = false;
         }
     } InitializeGroups();
+    
+    function InitializeEmitters() {
+        for (var i = 0; i < emitter_pool_size; i++) {
+            var emitter = audio_emitter_create();
+            audio_emitter_falloff(emitter, 100, max_distance, rolloff_factor);
+            emitter_pool[i] = {
+                emitter: emitter,
+                in_use: false,
+                current_sound: -1
+            };
+        }
+    } InitializeEmitters();
+    
+    // calculate final volume with group settings
+    function CalculateFinalVolume(sound_instance) {
+        var group = sound_instance.group;
+        var base_volume = sound_instance.volume;
+        
+        var group_vol = group_volumes[? group];
+        var group_mute = group_muted[? group];
+        var master_vol = group_volumes[? "MASTER"];
+        var master_mute = group_muted[? "MASTER"];
+        
+        if (master_mute || group_mute) {
+            return 0;
+        }
+        
+        return base_volume * group_vol * master_vol;
+    };
+    
+    // clean up finished sounds
+    function CleanFinishedSounds() {
+        for (var i = ds_list_size(active_sounds) - 1; i >= 0; i--) {
+            var sound = active_sounds[| i];
+            if (!audio_is_playing(sound.id)) {
+                // free emitter if this was a 3D sound
+                if (sound.spatial && sound.emitter_index != undefined) {
+                    var slot = emitter_pool[sound.emitter_index];
+                    slot.in_use = false;
+                    slot.current_sound = -1;
+                }
+                ds_list_delete(active_sounds, i);
+                active_count--;
+            }
+        }
+    };
+    
+    // get free emitter for 3D sounds
+    function GetFreeEmitter(priority) {
+        // look for completely free emitter
+        for (var i = 0; i < emitter_pool_size; i++) {
+            var slot = emitter_pool[i];
+            if (!slot.in_use) {
+                slot.in_use = true;
+                return { slot: slot, index: i };
+            }
+        }
+        
+        // look for emitter whose sound finished
+        for (var i = 0; i < emitter_pool_size; i++) {
+            var slot = emitter_pool[i];
+            if (!audio_emitter_is_playing(slot.emitter)) {
+                slot.in_use = true;
+                return { slot: slot, index: i };
+            }
+        }
+        
+        // steal from lowest priority active 3D sound
+        var lowest_priority = AUDIO_PRIORITY.CRITICAL + 1;
+        var stolen_index = -1;
+        
+        for (var i = 0; i < ds_list_size(active_sounds); i++) {
+            var sound = active_sounds[| i];
+            if (sound.spatial && sound.emitter_index != undefined) {
+                if (sound.priority < lowest_priority && sound.priority < priority) {
+                    lowest_priority = sound.priority;
+                    stolen_index = sound.emitter_index;
+                }
+            }
+        }
+        
+        if (stolen_index != -1) {
+            var slot = emitter_pool[stolen_index];
+            audio_stop_sound(slot.current_sound);
+            slot.in_use = true;
+            return { slot: slot, index: stolen_index };
+        }
+        
+        // fallback: use first emitter
+        var first_slot = emitter_pool[0];
+        audio_stop_sound(first_slot.current_sound);
+        first_slot.in_use = true;
+        return { slot: first_slot, index: 0 };
+    };
     
     // register sound
     function RegisterSFX(sound_asset, group = AUDIO_GROUP.SFX, priority = AUDIO_PRIORITY.NORMAL) {
@@ -165,29 +263,21 @@ function AudioManager() constructor {
     
     // playback control
     function PlaySFX(sound_asset, volume = 1.0, pitch = 1.0, priority = AUDIO_PRIORITY.NORMAL) {
-        if (ds_list_size(active_sounds) >= max_simultaneous_sounds) {
-            CullLowestPrioritySound(priority);
-        }
+        // clean up finished sounds first
+        CleanFinishedSounds();
         
-        var sound_id;
-        
-        if (!ds_queue_empty(sound_pool)) {
-            sound_id = ds_queue_dequeue(sound_pool);
-            if (audio_is_playing(sound_id)) {
-                audio_stop_sound(sound_id);
+        // check if we need to cull
+        if (active_count >= max_simultaneous_sounds) {
+            if (!CullLowestPrioritySound(priority)) {
+                return -1;
             }
-        } else {
-            sound_id = audio_play_sound(sound_asset, priority, false);
         }
+        
+        // play the sound
+        var sound_id = audio_play_sound(sound_asset, priority, false);
         
         if (sound_id != -1) {
             var group = GetSoundGroup(sound_asset);
-            var group_vol = group_volumes[? group];
-            var group_mute = group_muted[? group];
-            var final_volume = group_mute ? 0 : volume * group_vol * group_volumes[? "MASTER"];
-            
-            audio_sound_gain(sound_id, final_volume, 0);
-            audio_sound_pitch(sound_id, pitch);
             
             var sound_instance = {
                 id: sound_id,
@@ -197,15 +287,20 @@ function AudioManager() constructor {
                 pitch: pitch,
                 priority: priority,
                 start_time: current_time,
-                state: AUDIO_STATE.PLAYING
+                state: AUDIO_STATE.PLAYING,
+                spatial: false
             };
             
-            ds_list_add(active_sounds, sound_instance);
+            var final_volume = CalculateFinalVolume(sound_instance);
             
-            audio_play_sound(sound_id, priority, false);
+            audio_sound_gain(sound_id, final_volume, 0);
+            audio_sound_pitch(sound_id, pitch);
+            
+            ds_list_add(active_sounds, sound_instance);
+            active_count++;
             
             stats.sounds_played++;
-            stats.sounds_active = ds_list_size(active_sounds);
+            stats.sounds_active = active_count;
             stats.peak_sounds = max(stats.peak_sounds, stats.sounds_active);
             
             show_debug_message($"[Audio] Playing SFX: {sound_asset} (Vol: {final_volume}, Pitch: {pitch})");
@@ -221,36 +316,72 @@ function AudioManager() constructor {
             return PlaySFX(sound_asset, volume, pitch, priority);
         }
         
+        // calculate distance
         var dx = x - listener_position.x;
         var dy = y - listener_position.y;
         var dz = z - listener_position.z;
         var distance = sqrt(dx*dx + dy*dy + dz*dz);
         
+        // too far away
         if (distance > max_distance) {
-            return -1; // too far away
+            return -1;
         }
         
+        // get an emitter
+        var emitter_result = GetFreeEmitter(priority);
+        var emitter_slot = emitter_result.slot;
+        var emitter_index = emitter_result.index;
+        
+        // position the emitter
+        audio_emitter_position(emitter_slot.emitter, x, y, z);
+        
+        // calculate distance attenuation
         var attenuation = max(0, 1 - (distance / max_distance));
-        volume *= attenuation;
+        var attenuated_volume = volume * attenuation;
         
-        var pan = clamp(dx / max_distance, -1, 1);
-        
-        var sound_id = PlaySFX(sound_asset, volume, pitch, priority);
+        // play on emitter
+        var sound_id = audio_play_sound_on(emitter_slot.emitter, sound_asset, false, priority);
         
         if (sound_id != -1) {
-			audio_play_sound_at(sound_id, x, y, z);
+            emitter_slot.current_sound = sound_id;
             
-            for (var i = 0; i < ds_list_size(active_sounds); i++) {
-                var inst = active_sounds[| i];
-                if (inst.id == sound_id) {
-                    inst.spatial = true;
-                    inst.position = { x: x, y: y, z: z };
-                    break;
-                }
-            }
+            var group = GetSoundGroup(sound_asset);
+            
+            var sound_instance = {
+                id: sound_id,
+                asset: sound_asset,
+                group: group,
+                volume: volume,
+                pitch: pitch,
+                priority: priority,
+                start_time: current_time,
+                state: AUDIO_STATE.PLAYING,
+                spatial: true,
+                position: { x: x, y: y, z: z },
+                emitter_index: emitter_index,
+                emitter: emitter_slot.emitter
+            };
+            
+            var final_volume = CalculateFinalVolume(sound_instance) * attenuation;
+            
+            audio_sound_gain(sound_id, final_volume, 0);
+            audio_sound_pitch(sound_id, pitch);
+            
+            ds_list_add(active_sounds, sound_instance);
+            active_count++;
+            
+            stats.sounds_played++;
+            stats.sounds_active = active_count;
+            stats.peak_sounds = max(stats.peak_sounds, stats.sounds_active);
+            
+            show_debug_message($"[Audio] Playing 3D SFX: {sound_asset} at ({x}, {y}, {z})");
+            
+            return sound_id;
         }
         
-        return sound_id;
+        // failed to play, release emitter
+        emitter_slot.in_use = false;
+        return -1;
     };
     
     function PlayMusic(music_asset, fade = true, fade_time = 1.0, loop = true) {
@@ -576,12 +707,25 @@ function AudioManager() constructor {
         max_distance = max_dist;
         rolloff_factor = rolloff;
         doppler_factor = doppler;
+        
+        // update all emitters with new settings
+        for (var i = 0; i < emitter_pool_size; i++) {
+            audio_emitter_falloff(emitter_pool[i].emitter, 100, max_distance, rolloff_factor);
+        }
+        
         return self;
     };
     
     function UpdateSoundPosition(sound_id, x, y, z = 0) {
-        if (audio_is_playing(sound_id)) {
-            audio_sound_position(sound_id, x, y, z);
+        for (var i = 0; i < ds_list_size(active_sounds); i++) {
+            var sound = active_sounds[| i];
+            if (sound.id == sound_id && sound.spatial) {
+                sound.position = { x: x, y: y, z: z };
+                if (sound.emitter_index != undefined) {
+                    audio_emitter_position(emitter_pool[sound.emitter_index].emitter, x, y, z);
+                }
+                break;
+            }
         }
         return self;
     };
@@ -670,9 +814,21 @@ function AudioManager() constructor {
         if (lowest_index != -1) {
             var sound = active_sounds[| lowest_index];
             audio_stop_sound(sound.id);
+            
+            // free emitter if 3D sound
+            if (sound.spatial && sound.emitter_index != undefined) {
+                var slot = emitter_pool[sound.emitter_index];
+                slot.in_use = false;
+                slot.current_sound = -1;
+            }
+            
             ds_list_delete(active_sounds, lowest_index);
-            ds_queue_enqueue(sound_pool, sound.id);
+            active_count--;
+            
+            return true;
         }
+        
+        return false;
     };
     
     function IsPlaying(sound_id) {
@@ -687,8 +843,16 @@ function AudioManager() constructor {
         }
         
         for (var i = 0; i < ds_list_size(active_sounds); i++) {
-            if (active_sounds[| i].id == sound_id) {
+            var sound = active_sounds[| i];
+            if (sound.id == sound_id) {
+                // free emitter if 3D sound
+                if (sound.spatial && sound.emitter_index != undefined) {
+                    var slot = emitter_pool[sound.emitter_index];
+                    slot.in_use = false;
+                    slot.current_sound = -1;
+                }
                 ds_list_delete(active_sounds, i);
+                active_count--;
                 break;
             }
         }
@@ -697,12 +861,14 @@ function AudioManager() constructor {
     };
     
     function StopAll(fade = false, fade_time = 0.3) {
-        for (var i = 0; i < ds_list_size(active_sounds); i++) {
+        for (var i = ds_list_size(active_sounds) - 1; i >= 0; i--) {
             var sound = active_sounds[| i];
             StopSound(sound.id, fade, fade_time);
         }
         
         ds_list_clear(active_sounds);
+        active_count = 0;
+        
         return self;
     };
     
@@ -750,28 +916,25 @@ function AudioManager() constructor {
             }
         }
         
-        for (var i = ds_list_size(active_sounds) - 1; i >= 0; i--) { // clean
-            var sound = active_sounds[| i];
-            if (!audio_is_playing(sound.id)) {
-                ds_queue_enqueue(sound_pool, sound.id);
-                ds_list_delete(active_sounds, i);
-            }
-        }
+        // clean up finished sounds
+        CleanFinishedSounds();
         
-        if (spatial_enabled) { // 3d
+        // update 3D sounds
+        if (spatial_enabled) {
             for (var i = 0; i < ds_list_size(active_sounds); i++) {
                 var sound = active_sounds[| i];
-                if (sound.spatial) {
-                    var dist = point_distance(
-                        sound.position.x, sound.position.y,
-                        listener_position.x, listener_position.y
-                    );
+                if (sound.spatial && sound.position != undefined) {
+                    var dx = sound.position.x - listener_position.x;
+                    var dy = sound.position.y - listener_position.y;
+                    var dz = sound.position.z - listener_position.z;
+                    var distance = sqrt(dx*dx + dy*dy + dz*dz);
                     
-                    if (dist > max_distance) {
+                    if (distance > max_distance) {
                         StopSound(sound.id);
                     } else {
-                        var attenuation = max(0, 1 - (dist / max_distance));
-                        audio_sound_gain(sound.id, sound.volume * attenuation, 0);
+                        var attenuation = max(0, 1 - (distance / max_distance));
+                        var base_vol = CalculateFinalVolume(sound);
+                        audio_sound_gain(sound.id, base_vol * attenuation, 0);
                     }
                 }
             }
@@ -779,7 +942,7 @@ function AudioManager() constructor {
         
         ApplyDucking();
         
-        stats.sounds_active = ds_list_size(active_sounds);
+        stats.sounds_active = active_count;
         
         return self;
     };
@@ -802,6 +965,14 @@ function AudioManager() constructor {
         StopAll();
         StopMusic(false);
         
+        // free emitters
+        for (var i = 0; i < emitter_pool_size; i++) {
+            if (emitter_pool[i].emitter != undefined) {
+                audio_emitter_free(emitter_pool[i].emitter);
+            }
+        }
+        emitter_pool = [];
+        
         ds_map_destroy(groups);
         ds_map_destroy(group_volumes);
         ds_map_destroy(group_muted);
@@ -811,7 +982,5 @@ function AudioManager() constructor {
         ds_list_destroy(active_music);
         ds_list_destroy(active_ambient);
         ds_list_destroy(music_playlist);
-        
-        ds_queue_destroy(sound_pool);
     };
 }
