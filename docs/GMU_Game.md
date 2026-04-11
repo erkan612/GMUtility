@@ -1,106 +1,758 @@
+
+
 # GMU_Game
 
-Game-specific progression systems for GameMaker. This module provides a quest system with task tracking and an achievement manager with progress tracking and unlock callbacks.
+Game-specific progression systems for GameMaker. This module provides a complete quest system with prerequisites, objectives, rewards, and chains, plus an achievement manager with progress tracking and unlock callbacks. All systems revolve around a central `GameContext` dependency container.
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [GameContext](#gamecontext)
+  - [Built-in Systems](#built-in-systems)
+  - [Player Management](#player-management)
+  - [Inventory Management](#inventory-management)
+  - [Currency Management](#currency-management)
+  - [Flag Management](#flag-management)
+  - [Statistics & Reputation](#statistics--reputation)
+  - [Serialization](#serialization)
 - [Quest System](#quest-system)
-  - [Task](#task)
-  - [TaskTracer](#tasktracer)
+  - [QUEST_STATE Enum](#quest_state-enum)
+  - [QUEST_TYPE Enum](#quest_type-enum)
+  - [QuestObjective](#questobjective)
+  - [QuestPrerequisite](#questprerequisite)
+  - [Reward & RewardBundle](#reward--rewardbundle)
   - [Quest](#quest)
+  - [QuestChain](#questchain)
   - [QuestManager](#questmanager)
   - [QuestTracker](#questtracker)
 - [Achievement Manager](#achievement-manager)
-  - [Adding Achievements](#adding-achievements)
-  - [Updating Progress](#updating-progress)
-  - [Querying Achievements](#querying-achievements)
-  - [Save and Load](#save-and-load)
+- [Built-in Game Systems](#built-in-game-systems)
+  - [SimplePlayer](#simpleplayer)
+  - [SimpleInventory](#simpleinventory)
+  - [SimpleCurrency](#simplecurrency)
 - [Complete Examples](#complete-examples)
 
 ---
 
 ## Overview
 
-The GMU_Game module provides two major systems for game progression:
+The GMU_Game module provides a complete game progression framework:
 
 ### Quest System
-- Task-based quests with progress tracking
-- Quest templates for reusable quest definitions
-- Quest states (inactive, active, completed, failed)
-- Completion and failure callbacks
-- Quest manager for template management
-- Quest tracker for active quest management
+- Multi-objective quests with prerequisites
+- Quest chains and sequential progression
+- Reward bundles (XP, currency, items, unlocks)
+- Optional and hidden objectives
+- Time-limited quests with expiration
+- Quest giver and dialogue integration
+- Full serialization support
 
 ### Achievement Manager
 - Progress-based achievements with goals
 - Hidden achievements support
+- Category organization
+- Statistic tracking
 - Unlock callbacks
 - Save/load integration
-- Progress tracking and statistics
+
+### GameContext
+- Central dependency container
+- Built-in player, inventory, currency, and flag systems
+- Statistic and reputation tracking
+- Event callbacks for rewards and progression
+- Full serialization support
 
 ---
 
-## Quest System
+## GameContext
 
-### TASK_STATE Enum
+The `GameContext` class serves as the central dependency hub for all game systems. It provides a unified interface for player data, inventory, currency, flags, and progression tracking.
 
-Task states for tracking progress.
+### Constructor
 
 ```gml
-enum TASK_STATE {
-    PENDING,        // Not started yet
-    ACTIVE,         // Currently in progress
-    COMPLETED,      // Successfully finished
-    FAILED,         // Failed to complete
-    ABANDONED,      // Player gave up
-    LOCKED,         // Cannot start yet (requirements not met)
-    UNLOCKED,       // Available but not started
-    REWARDED,       // Completed and rewards claimed
-    HIDDEN,         // Secret task not yet revealed
-    TIMED_OUT,      // Failed due to time limit
-    SKIPPED,        // Bypassed (for debug or story reasons)
-    REPEATABLE,     // Can be done multiple times
-    ON_HOLD,        // Temporarily paused
-    RESET,          // Reset to pending state
-    UPGRADED        // Task was improved/replaced
+new GameContext()
+```
+
+```gml
+var Game = new GameContext();
+Game.InitializeDefaults();  // Creates default systems if not provided
+```
+
+---
+
+### Built-in Systems
+
+The `InitializeDefaults()` method creates default implementations for any system not explicitly provided:
+
+```gml
+function InitializeDefaults() {
+    if (player == undefined) player = new SimplePlayer();
+    if (inventory == undefined) inventory = new SimpleInventory();
+    if (currency == undefined) currency = new SimpleCurrency();
+    if (flags == undefined) flags = new FlagPatrol();
+    if (questManager == undefined) questManager = new QuestManager();
+    if (questTracker == undefined) questTracker = new QuestTracker();
+    if (achievementManager == undefined) achievementManager = new AchievementManager();
+    return self;
 }
 ```
 
 ---
 
-### Task
+### Player Management
+
+#### GetPlayerLevel()
+
+Gets the current player level.
+
+```gml
+var level = Game.GetPlayerLevel();
+```
+
+**Returns:** Player level (default: 1)
+
+---
+
+#### GetPlayerPosition()
+
+Gets the current player position.
+
+```gml
+var pos = Game.GetPlayerPosition();
+show_debug_message($"Player at: {pos.x}, {pos.y}");
+```
+
+**Returns:** Struct with `x` and `y` properties.
+
+---
+
+#### AddExperience(amount)
+
+Adds experience to the player.
+
+```gml
+Game.AddExperience(100);
+```
+
+**Returns:** `true` if experience was added.
+
+---
+
+### Inventory Management
+
+#### HasItem(itemId, count)
+
+Checks if the player has a specific item.
+
+```gml
+if (Game.HasItem("health_potion", 3)) {
+    // Player has at least 3 potions
+}
+```
+
+**Returns:** `true` if item count met.
+
+---
+
+#### GetItemCount(itemId)
+
+Gets the count of a specific item.
+
+```gml
+var potionCount = Game.GetItemCount("health_potion");
+```
+
+**Returns:** Number of items owned.
+
+---
+
+#### AddItem(itemId, count)
+
+Adds items to inventory.
+
+```gml
+Game.AddItem("health_potion", 5);
+Game.AddItem("ancient_sword", 1);
+```
+
+**Returns:** `true` if items were added.
+
+---
+
+#### RemoveItem(itemId, count)
+
+Removes items from inventory.
+
+```gml
+if (Game.RemoveItem("health_potion", 1)) {
+    // Potion consumed
+}
+```
+
+**Returns:** `true` if items were removed.
+
+---
+
+### Currency Management
+
+#### GetCurrency(currencyId = "default")
+
+Gets current currency amount.
+
+```gml
+var gold = Game.GetCurrency("gold");
+var gems = Game.GetCurrency("gems");
+```
+
+**Returns:** Currency amount (default: 0)
+
+---
+
+#### AddCurrency(amount, currencyId = "default")
+
+Adds currency.
+
+```gml
+Game.AddCurrency(100, "gold");
+Game.AddCurrency(5, "gems");
+```
+
+**Returns:** `true` if currency was added.
+
+---
+
+#### SpendCurrency(amount, currencyId = "default")
+
+Spends currency.
+
+```gml
+if (Game.SpendCurrency(50, "gold")) {
+    // Purchase successful
+}
+```
+
+**Returns:** `true` if sufficient funds.
+
+---
+
+### Flag Management
+
+The GameContext uses `FlagPatrol` for bitwise flag operations.
+
+#### HasFlag(flagValue)
+
+Checks if a flag is set.
+
+```gml
+if (Game.HasFlag(GAME_FLAG.TUTORIAL_COMPLETE)) {
+    // Skip tutorial
+}
+```
+
+**Returns:** `true` if flag is set.
+
+---
+
+#### SetFlag(flagValue)
+
+Sets a flag.
+
+```gml
+Game.SetFlag(GAME_FLAG.MET_BLACKSMITH);
+Game.SetFlag(GAME_FLAG.FOUND_ANCIENT_SWORD);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+#### ClearFlag(flagValue)
+
+Clears a flag.
+
+```gml
+Game.ClearFlag(GAME_FLAG.MET_BLACKSMITH);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+#### ToggleFlag(flagValue)
+
+Toggles a flag.
+
+```gml
+Game.ToggleFlag(GAME_FLAG.UNLOCKED_FAST_TRAVEL);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+#### GetFlags()
+
+Gets the raw flags integer value (for saving).
+
+```gml
+var rawFlags = Game.GetFlags();
+```
+
+**Returns:** Integer bitmask of all flags.
+
+---
+
+#### SetFlags(value)
+
+Sets all flags from a raw integer value (for loading).
+
+```gml
+Game.SetFlags(7);  // Sets flags for bits 1, 2, 4
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+#### HasAllFlags(flagValues)
+
+Checks if all specified flags are set.
+
+```gml
+if (Game.HasAllFlags([GAME_FLAG.FOUND_SWORD, GAME_FLAG.DEFEATED_BOSS])) {
+    // Unlock final dungeon
+}
+```
+
+**Returns:** `true` if all flags are set.
+
+---
+
+#### HasAnyFlag(flagValues)
+
+Checks if any specified flag is set.
+
+```gml
+if (Game.HasAnyFlag([GAME_FLAG.FOUND_KEY, GAME_FLAG.PICKED_LOCK])) {
+    // Player can open door
+}
+```
+
+**Returns:** `true` if any flag is set.
+
+---
+
+### Statistics & Reputation
+
+#### IncrementStat(statId, amount = 1)
+
+Increments a tracked statistic.
+
+```gml
+Game.IncrementStat("enemies_killed");
+Game.IncrementStat("distance_traveled", 10);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+#### GetStat(statId)
+
+Gets a statistic value.
+
+```gml
+var kills = Game.GetStat("enemies_killed");
+```
+
+**Returns:** Statistic value.
+
+---
+
+#### SetStat(statId, value)
+
+Sets a statistic value.
+
+```gml
+Game.SetStat("highest_combo", 50);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+#### GetReputation(factionId)
+
+Gets reputation with a faction.
+
+```gml
+var rep = Game.GetReputation("thieves_guild");
+```
+
+**Returns:** Reputation value.
+
+---
+
+#### AddReputation(factionId, amount)
+
+Adds reputation with a faction.
+
+```gml
+Game.AddReputation("thieves_guild", 10);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+#### HasReputation(factionId, required)
+
+Checks if reputation meets requirement.
+
+```gml
+if (Game.HasReputation("thieves_guild", 50)) {
+    // Access to special merchant
+}
+```
+
+**Returns:** `true` if reputation met.
+
+---
+
+### Quest System Integration
+
+#### UnlockQuest(questId)
+
+Unlocks a quest.
+
+```gml
+Game.UnlockQuest("ancient_sword_quest");
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+#### IsQuestCompleted(questId)
+
+Checks if a quest is completed.
+
+```gml
+if (Game.IsQuestCompleted("tutorial")) {
+    // Skip tutorial
+}
+```
+
+**Returns:** `true` if quest completed.
+
+---
+
+#### GetQuest(questId)
+
+Gets a quest instance.
+
+```gml
+var quest = Game.GetQuest("main_quest");
+if (quest != undefined) {
+    show_debug_message($"Quest progress: {quest.GetProgressRatio() * 100}%");
+}
+```
+
+**Returns:** Quest instance or `undefined`.
+
+---
+
+### Achievement System Integration
+
+#### UnlockAchievement(achievementId)
+
+Unlocks an achievement.
+
+```gml
+Game.UnlockAchievement("first_kill");
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+#### ProgressAchievement(achievementId, amount = 1)
+
+Adds progress to an achievement.
+
+```gml
+Game.ProgressAchievement("slayer", 1);
+Game.ProgressAchievement("collector", 5);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+### Reward Handling
+
+#### GiveReward(type, value, id = undefined)
+
+Gives a reward to the player.
+
+```gml
+Game.GiveReward(REWARD_TYPE.EXPERIENCE, 100);
+Game.GiveReward(REWARD_TYPE.CURRENCY, 500, "gold");
+Game.GiveReward(REWARD_TYPE.ITEM, 1, "ancient_sword");
+Game.GiveReward(REWARD_TYPE.UNLOCK_QUEST, 1, "new_quest_id");
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+### Serialization
+
+#### Serialize()
+
+Serializes the GameContext state.
+
+```gml
+var data = Game.Serialize();
+File.SaveJSON("save.json", { context: data });
+```
+
+**Returns:** Struct with serialized data.
+
+---
+
+#### Deserialize(data)
+
+Deserializes the GameContext state.
+
+```gml
+var saveData = File.LoadJSON("save.json");
+Game.Deserialize(saveData.context);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+### Update
+
+#### Update(deltaTime = 1/60)
+
+Updates the GameContext (quests, time tracking).
+
+```gml
+// In Step event
+Game.Update(1 / game_get_speed(gamespeed_fps));
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+### Callbacks
+
+The GameContext supports several optional callbacks:
+
+```gml
+Game.onRewardGiven = function(type, value, id) {
+    show_debug_message($"Reward: {type} - {value} {id}");
+};
+
+Game.onQuestStateChanged = function(quest, oldState, newState) {
+    show_debug_message($"Quest {quest.name}: {oldState} -> {newState}");
+};
+
+Game.onAchievementUnlocked = function(achievementId) {
+    show_message($"Achievement Unlocked: {achievementId}");
+};
+
+Game.onStatChanged = function(statId, oldValue, newValue) {
+    show_debug_message($"Stat {statId}: {oldValue} -> {newValue}");
+};
+```
+
+---
+
+### Cleanup
+
+#### Free()
+
+Cleans up the GameContext.
+
+```gml
+Game.Free();
+```
+
+---
+
+## Quest System
+
+### QUEST_STATE Enum
+
+Quest states for tracking progression.
+
+```gml
+enum QUEST_STATE {
+    INACTIVE,           // Not started
+    ACTIVE,             // Currently in progress
+    COMPLETED,          // Finished successfully
+    FAILED,             // Failed
+    ABANDONED,          // Player gave up
+    LOCKED,             // Prerequisites not met
+    AVAILABLE           // Can be accepted
+}
+```
+
+---
+
+### QUEST_TYPE Enum
+
+Quest types for categorization.
+
+```gml
+enum QUEST_TYPE {
+    MAIN,               // Main story quest
+    SIDE,               // Optional side quest
+    REPEATABLE,         // Can be done multiple times
+    DAILY,              // Daily quest
+    EVENT,              // Time-limited event
+    HIDDEN              // Secret quest
+}
+```
+
+---
+
+### REWARD_TYPE Enum
+
+Reward types for quest completion.
+
+```gml
+enum REWARD_TYPE {
+    EXPERIENCE,
+    CURRENCY,
+    ITEM,
+    SKILL_POINT,
+    UNLOCK_QUEST,
+    UNLOCK_ACHIEVEMENT,
+    REPUTATION,
+    CUSTOM
+}
+```
+
+---
+
+### QuestObjective
 
 A single objective within a quest.
 
 #### Constructor
 
 ```gml
-new Task(id, goal = 1, onComplete = undefined)
+new QuestObjective(id, description, goal = 1, type = "generic")
 ```
 
 **Parameters:**
-- `id` - Task identifier string
+- `id` - Objective identifier
+- `description` - Display description
 - `goal` - Target progress value (default: 1)
-- `onComplete` - Optional callback when task completes
+- `type` - Objective type: "kill", "collect", "talk", "reach", "wait", "custom"
 
 ```gml
-var task = new Task("collect_coins", 10, function(data) {
-    show_debug_message("Collected all coins!");
-});
+var obj = new QuestObjective("kill_wolves", "Defeat Wolves", 5, "kill");
+obj.SetTarget("enemy_wolf");
 ```
 
 ---
 
 #### Methods
 
-##### SetState(state)
+##### SetTarget(targetId)
 
-Sets the task state.
+Sets the target ID for the objective.
 
 ```gml
-task.SetState(TASK_STATE.ACTIVE);
-task.SetState(TASK_STATE.COMPLETED);
+obj.SetTarget("enemy_wolf");
+obj.SetTarget("item_potion");
+obj.SetTarget("npc_blacksmith");
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+##### SetLocation(x, y, radius = 32)
+
+Sets a location target (for "reach" objectives).
+
+```gml
+obj.SetLocation(100, 200, 50);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+##### SetHidden(hidden = true)
+
+Sets whether the objective is hidden.
+
+```gml
+obj.SetHidden(true);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+##### SetOptional(optional = true)
+
+Sets whether the objective is optional.
+
+```gml
+obj.SetOptional(true);
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+##### SetOnProgress(callback)
+
+Sets a callback for progress updates.
+
+```gml
+obj.SetOnProgress(function(self, progress, goal, data) {
+    show_debug_message($"Progress: {progress}/{goal}");
+});
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+##### SetOnComplete(callback)
+
+Sets a callback for objective completion.
+
+```gml
+obj.SetOnComplete(function(self, data) {
+    show_message("Objective complete!");
+});
+```
+
+**Returns:** `self` for chaining.
+
+---
+
+##### SetCustomCheck(check)
+
+Sets a custom check function for completion.
+
+```gml
+obj.SetCustomCheck(function(context) {
+    return context.GetStat("special_condition") >= 10;
+});
 ```
 
 **Returns:** `self` for chaining.
@@ -109,29 +761,12 @@ task.SetState(TASK_STATE.COMPLETED);
 
 ##### AddProgress(amount = 1, data = undefined)
 
-Adds progress to the task.
+Adds progress to the objective.
 
 ```gml
-// Increment by 1
-task.AddProgress();
-
-// Increment by specific amount
-task.AddProgress(5);
-
-// Pass data to completion callback
-task.AddProgress(1, { source: "enemy" });
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### Reset()
-
-Resets the task to pending state with zero progress.
-
-```gml
-task.Reset();
+obj.AddProgress();
+obj.AddProgress(3);
+obj.AddProgress(1, { source: "enemy" });
 ```
 
 **Returns:** `self` for chaining.
@@ -140,142 +775,154 @@ task.Reset();
 
 ##### IsComplete()
 
-Checks if the task is complete.
+Checks if the objective is complete.
 
 ```gml
-if (task.IsComplete()) {
-    // Task finished
+if (obj.IsComplete()) {
+    // Objective finished
 }
 ```
 
-**Returns:** `true` if state is COMPLETED.
+**Returns:** `true` if complete.
 
 ---
 
 ##### GetProgressRatio()
 
-Gets the current progress as a ratio (0-1).
+Gets the current progress ratio (0-1).
 
 ```gml
-var percent = task.GetProgressRatio() * 100;
-draw_text(x, y, $"Progress: {percent}%");
+var percent = obj.GetProgressRatio() * 100;
 ```
 
 **Returns:** Float between 0.0 and 1.0.
 
 ---
 
-##### Properties
+##### GetDisplayText()
+
+Gets the display text for the objective.
 
 ```gml
-task.id        // Task identifier
-task.state     // Current TASK_STATE
-task.progress  // Current progress value
-task.goal      // Target progress value
-task.onComplete // Completion callback
+var text = obj.GetDisplayText();  // "[3/5] Defeat Wolves" or "[✓] Defeat Wolves"
 ```
+
+**Returns:** Formatted display string.
 
 ---
 
-### TaskTracer
+### QuestPrerequisite
 
-Manages a collection of tasks.
+A condition that must be met before a quest becomes available.
 
 #### Constructor
 
 ```gml
-new TaskTracer()
+new QuestPrerequisite(type, target, value = 1)
 ```
 
+**Parameters:**
+- `type` - "quest", "level", "item", "reputation", "flag", "custom"
+- `target` - Quest ID, item ID, faction ID, flag value, etc.
+- `value` - Required value (default: 1)
+
 ```gml
-var tasks = new TaskTracer();
+var prereq = new QuestPrerequisite("level", "", 5);
+var prereq2 = new QuestPrerequisite("quest", "tutorial_complete");
+var prereq3 = new QuestPrerequisite("item", "ancient_key", 1);
 ```
 
 ---
 
 #### Methods
 
-##### AddTask(task)
+##### SetCustomCheck(check)
 
-Adds a task to the tracer.
+Sets a custom check function.
 
 ```gml
-tasks.AddTask(new Task("kill_goblins", 5));
-tasks.AddTask(new Task("collect_herbs", 3));
-tasks.AddTask(new Task("reach_location", 1));
+prereq.SetCustomCheck(function(context) {
+    return context.GetStat("special_unlock") >= 1;
+});
 ```
 
 **Returns:** `self` for chaining.
 
 ---
 
-##### RemoveTask(id)
+##### IsMet(context)
 
-Removes a task by ID.
-
-```gml
-tasks.RemoveTask("kill_goblins");
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### GetTask(id)
-
-Gets a task by ID.
+Checks if the prerequisite is met.
 
 ```gml
-var task = tasks.GetTask("collect_herbs");
-if (task != undefined) {
-    task.AddProgress();
+if (prereq.IsMet(Game)) {
+    // Prerequisite satisfied
 }
 ```
 
-**Returns:** Task instance or `undefined`.
+**Returns:** `true` if condition met.
 
 ---
 
-##### AreAllComplete()
+### Reward & RewardBundle
 
-Checks if all tasks are complete.
+#### Reward
+
+A single reward granted on quest completion.
 
 ```gml
-if (tasks.AreAllComplete()) {
-    // All quest objectives met
-    CompleteQuest();
+new Reward(type, value, id = undefined)
+```
+
+```gml
+var reward = new Reward(REWARD_TYPE.EXPERIENCE, 100);
+var reward2 = new Reward(REWARD_TYPE.CURRENCY, 500, "gold");
+var reward3 = new Reward(REWARD_TYPE.ITEM, 1, "ancient_sword");
+```
+
+---
+
+#### RewardBundle
+
+A collection of rewards.
+
+```gml
+new RewardBundle()
+```
+
+##### Methods
+
+```gml
+var bundle = new RewardBundle();
+
+// Add rewards
+bundle.AddExperience(100);
+bundle.AddCurrency(500, "gold");
+bundle.AddItem("health_potion", 3);
+bundle.AddSkillPoint(1);
+bundle.UnlockQuest("new_quest");
+bundle.UnlockAchievement("quest_master");
+bundle.AddReputation("village", 50);
+
+// Add custom reward
+bundle.AddCustom(function(context) {
+    context.SetFlag(GAME_FLAG.SPECIAL_REWARD);
+});
+
+// Give all rewards
+bundle.Give(Game);
+
+// Check if empty
+if (!bundle.IsEmpty()) {
+    // Has rewards
 }
-```
-
-**Returns:** `true` if all tasks are COMPLETED.
-
----
-
-##### Clear()
-
-Clears all tasks.
-
-```gml
-tasks.Clear();
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### Free()
-
-Cleans up the task tracer.
-
-```gml
-tasks.Free();
 ```
 
 ---
 
 ### Quest
 
-A complete quest with multiple tasks.
+A complete quest with objectives, prerequisites, and rewards.
 
 #### Constructor
 
@@ -286,15 +933,14 @@ new Quest(name, description, onComplete, onFail)
 **Parameters:**
 - `name` - Quest name
 - `description` - Quest description
-- `onComplete` - Callback when quest completes
-- `onFail` - Callback when quest fails
+- `onComplete` - Completion callback
+- `onFail` - Failure callback
 
 ```gml
 var quest = new Quest(
-    "The Goblin Threat",
-    "Clear the forest of goblins and collect their stolen goods.",
+    "The Lost Sword",
+    "Find the ancient sword and return it to the blacksmith.",
     function(quest) {
-        GiveReward(quest.rewards);
         show_message("Quest Complete!");
     },
     function(quest) {
@@ -305,92 +951,144 @@ var quest = new Quest(
 
 ---
 
-#### Methods
-
-##### AddTask(task)
-
-Adds a task to the quest.
+#### Configuration Methods
 
 ```gml
-quest.AddTask(new Task("kill_goblins", 5));
-quest.AddTask(new Task("collect_goods", 3));
-quest.AddTask(new Task("rescue_villager", 1));
-```
+quest.SetId("lost_sword");
+quest.SetType(QUEST_TYPE.MAIN);
+quest.SetQuestGiver("npc_blacksmith");
+quest.SetExpireTime(3600);  // 1 hour
+quest.SetNextQuest("blacksmith_reward");
+quest.AddChildQuest("optional_dungeon");
 
-**Returns:** `self` for chaining.
+// Dialogue
+quest.SetStartDialogue("blacksmith_quest_start");
+quest.SetProgressDialogue("blacksmith_quest_progress");
+quest.SetCompleteDialogue("blacksmith_quest_complete");
+```
 
 ---
 
-##### Start()
-
-Starts the quest (changes state from inactive to active).
+#### Prerequisite Methods
 
 ```gml
+quest.RequireLevel(5);
+quest.RequireQuest("tutorial_complete");
+quest.RequireItem("ancient_key", 1);
+quest.RequireReputation("village", 25);
+quest.RequireFlag(GAME_FLAG.MET_BLACKSMITH);
+quest.RequireCustom(function(context) {
+    return context.GetStat("special_condition") >= 1;
+});
+```
+
+---
+
+#### Objective Methods
+
+```gml
+// Add objectives
+quest.AddKillObjective("kill_wolves", "enemy_wolf", "Defeat 5 Wolves", 5);
+quest.AddCollectObjective("collect_herbs", "item_herb", "Collect 3 Herbs", 3);
+quest.AddTalkObjective("talk_elder", "npc_elder", "Speak with the Village Elder");
+quest.AddReachObjective("reach_altar", 500, 300, 50, "Reach the Ancient Altar");
+quest.AddCustomObjective("special", "Complete special task", function(context) {
+    return context.HasFlag(GAME_FLAG.SPECIAL_COMPLETE);
+});
+
+// Progress objectives
+quest.ProgressObjective("kill_wolves", 1);
+quest.ProgressByType("kill", "enemy_wolf", 1);
+
+// Get objective
+var obj = quest.GetObjective("kill_wolves");
+var current = quest.GetCurrentObjective();
+```
+
+---
+
+#### Reward Methods
+
+```gml
+quest.AddReward(REWARD_TYPE.EXPERIENCE, 1000);
+quest.AddReward(REWARD_TYPE.CURRENCY, 500, "gold");
+quest.AddReward(REWARD_TYPE.ITEM, 1, "ancient_sword");
+
+quest.AddBonusReward(REWARD_TYPE.CURRENCY, 100, "gold");  // For optional objectives
+```
+
+---
+
+#### State Control Methods
+
+```gml
+// Check if can accept
+if (quest.CanAccept(Game)) {
+    quest.Accept(Game);
+}
+
 quest.Start();
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### Fail()
-
-Fails the quest and calls the onFail callback.
-
-```gml
 quest.Fail();
-```
+quest.Abandon();
+quest.Update(Game);
+quest.Complete(Game);
 
-**Returns:** `self` for chaining.
+// Query state
+if (quest.IsComplete()) { }
+if (quest.IsActive()) { }
+if (quest.IsAvailable()) { }
+if (quest.IsLocked()) { }
+```
 
 ---
 
-##### Update()
-
-Updates the quest (checks for completion).
-
-```gml
-// Call each frame for active quests
-quest.Update();
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### Reset()
-
-Resets the quest and all tasks to initial state.
+#### Utility Methods
 
 ```gml
 quest.Reset();
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### Free()
-
-Cleans up the quest.
-
-```gml
-quest.Free();
+var progress = quest.GetProgressRatio();  // 0-1
+var summary = quest.GetSummary();
+var objectives = quest.GetObjectiveSummaries();
 ```
 
 ---
 
-##### Properties
+### QuestChain
+
+A series of quests that must be completed in order.
+
+#### Constructor
 
 ```gml
-quest.id           // Unique GUID
-quest.name         // Quest name
-quest.description  // Quest description
-quest.state        // "inactive", "active", "completed", "failed"
-quest.tasks        // TaskTracer instance
-quest.rewards      // Optional rewards data
-quest.onComplete   // Completion callback
-quest.onFail       // Failure callback
+new QuestChain(name)
+```
+
+```gml
+var chain = new QuestChain("Main Story");
+chain.AddQuest("prologue");
+chain.AddQuest("chapter_1");
+chain.AddQuest("chapter_2");
+chain.AddQuest("finale");
+chain.SetAutoAdvance(true);
+```
+
+---
+
+#### Methods
+
+```gml
+chain.AddQuest("quest_id");
+chain.SetAutoAdvance(true);
+
+var current = chain.GetCurrentQuest();
+chain.Advance();
+
+if (chain.IsComplete()) {
+    // Chain finished
+}
+
+var progress = chain.GetProgress();
+chain.Reset();
 ```
 
 ---
@@ -406,109 +1104,47 @@ new QuestManager()
 ```
 
 ```gml
-var quest_manager = new QuestManager();
+var questManager = new QuestManager();
 ```
 
 ---
 
 #### Methods
 
-##### AddTemplate(template)
-
-Adds a quest template.
-
 ```gml
-// Create a template quest
-var template = new Quest(
-    "Gather Resources",
-    "Collect wood and stone for the village.",
-    undefined,
-    undefined
+// Register template
+questManager.RegisterTemplate(quest);
+
+// Get template
+var template = questManager.GetTemplate("quest_id");
+
+// Check if exists
+if (questManager.HasTemplate("quest_id")) { }
+
+// Register chain
+questManager.RegisterChain(chain);
+var chain = questManager.GetChain("Main Story");
+
+// Start chain
+questManager.StartChain("Main Story", Game);
+
+// Spawn quest from template
+var spawned = questManager.SpawnQuest("quest_id");
+var spawnedWithCallbacks = questManager.SpawnQuest("quest_id",
+    function(q) { /* custom complete */ },
+    function(q) { /* custom fail */ }
 );
-template.AddTask(new Task("collect_wood", 10));
-template.AddTask(new Task("collect_stone", 5));
 
-quest_manager.AddTemplate(template);
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### RemoveTemplate(id)
-
-Removes a quest template by ID.
-
-```gml
-quest_manager.RemoveTemplate(template.id);
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### GetTemplate(id)
-
-Gets a quest template by ID.
-
-```gml
-var template = quest_manager.GetTemplate(quest_id);
-```
-
-**Returns:** Quest template or `undefined`.
-
----
-
-##### SpawnQuest(templateID, customOnComplete = undefined, customOnFail = undefined)
-
-Creates a new quest instance from a template.
-
-```gml
-// Spawn with template callbacks
-var quest = quest_manager.SpawnQuest(template.id);
-
-// Spawn with custom callbacks
-var quest = quest_manager.SpawnQuest(template.id,
-    function(q) {
-        // Custom completion logic
-        player.xp += 100;
-    },
-    function(q) {
-        // Custom failure logic
-        player.reputation -= 10;
-    }
-);
-```
-
-**Returns:** New Quest instance or `undefined`.
-
----
-
-##### Clear()
-
-Clears all templates.
-
-```gml
-quest_manager.Clear();
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### Free()
-
-Cleans up the quest manager.
-
-```gml
-quest_manager.Free();
+// Clear and cleanup
+questManager.Clear();
+questManager.Free();
 ```
 
 ---
 
 ### QuestTracker
 
-Tracks active and completed quests for a player.
+Tracks player's active and completed quests.
 
 #### Constructor
 
@@ -517,109 +1153,52 @@ new QuestTracker()
 ```
 
 ```gml
-var quest_tracker = new QuestTracker();
+var questTracker = new QuestTracker();
 ```
 
 ---
 
 #### Methods
 
-##### AddQuest(quest)
-
-Adds a quest to the tracker.
-
 ```gml
-var quest = quest_manager.SpawnQuest("gather_resources");
-quest_tracker.AddQuest(quest);
-```
+// Add/remove quests
+questTracker.AddQuest(quest);
+questTracker.RemoveQuest("quest_id");
 
-**Returns:** `self` for chaining.
+// Get quest
+var quest = questTracker.GetQuest("quest_id");
+if (questTracker.HasQuest("quest_id")) { }
 
----
+// Check completion
+if (questTracker.IsQuestCompleted("quest_id")) { }
 
-##### RemoveQuest(id)
+// Accept/abandon/complete
+questTracker.AcceptQuest("quest_id", Game);
+questTracker.AbandonQuest("quest_id");
+questTracker.CompleteQuest("quest_id", Game);
 
-Removes a quest by ID.
+// Progress quests
+questTracker.ProgressQuest("quest_id", "objective_id", 1);
+questTracker.ProgressByType("kill", "enemy_wolf", 1);
 
-```gml
-quest_tracker.RemoveQuest(quest.id);
-```
+// Convenience methods
+questTracker.OnKill("enemy_wolf");
+questTracker.OnCollect("item_potion", 3);
+questTracker.OnTalk("npc_blacksmith");
 
-**Returns:** `self` for chaining.
+// Update all quests
+questTracker.Update(Game);
 
----
+// Query quests
+var active = questTracker.GetActiveQuests();
+var available = questTracker.GetAvailableQuests();
+var completed = questTracker.GetCompletedQuests();
+var count = questTracker.GetActiveCount();
+var summaries = questTracker.GetAllQuestSummaries();
 
-##### GetQuest(id)
-
-Gets a quest by ID.
-
-```gml
-var quest = quest_tracker.GetQuest(quest_id);
-```
-
-**Returns:** Quest instance or `undefined`.
-
----
-
-##### Update()
-
-Updates all active quests.
-
-```gml
-// In Step event
-quest_tracker.Update();
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### GetActiveQuests()
-
-Gets all active quests.
-
-```gml
-var active = quest_tracker.GetActiveQuests();
-for (var i = 0; i < array_length(active); i++) {
-    draw_text(10, 10 + i * 20, active[i].name);
-}
-```
-
-**Returns:** Array of active Quest instances.
-
----
-
-##### GetCompletedQuests()
-
-Gets all completed quests.
-
-```gml
-var completed = quest_tracker.GetCompletedQuests();
-show_debug_message($"Completed {array_length(completed)} quests");
-```
-
-**Returns:** Array of completed Quest instances.
-
----
-
-##### Clear()
-
-Clears all quests.
-
-```gml
-quest_tracker.Clear();
-```
-
-**Returns:** `self` for chaining.
-
----
-
-##### Free()
-
-Cleans up the quest tracker.
-
-```gml
-quest_tracker.Free();
+// Clear and cleanup
+questTracker.Clear();
+questTracker.Free();
 ```
 
 ---
@@ -642,605 +1221,492 @@ var achievements = new AchievementManager();
 
 ---
 
-### Adding Achievements
-
-#### Add(id, name, goal = 1, hidden = false, on_unlock = undefined)
-
-Adds a new achievement.
+#### Methods
 
 ```gml
-// Simple achievement
-achievements.Add("first_kill", "First Blood", 1);
+// Add achievement
+achievements.Add("first_kill", "First Blood", "Defeat your first enemy", 1, false, "Combat");
+achievements.Add("slayer", "Slayer", "Defeat 100 enemies", 100, false, "Combat");
+achievements.Add("secret", "???", "Find the secret", 1, true, "Hidden");
 
-// Achievement with goal
-achievements.Add("goblin_slayer", "Goblin Slayer", 50, false, function(id) {
-    show_message("Achievement Unlocked: Goblin Slayer!");
-    UnlockReward("goblin_slayer_sword");
-});
+// Set icon and description
+achievements.SetIcon("first_kill", spr_achievement_kill);
+achievements.SetDescription("slayer", "Become a true slayer");
 
-// Hidden achievement
-achievements.Add("secret_ending", "???", 1, true, function(id) {
-    show_message("Secret Achievement: True Ending Unlocked!");
-});
-```
-
-**Parameters:**
-- `id` - Achievement identifier
-- `name` - Display name
-- `goal` - Progress required to unlock (default: 1)
-- `hidden` - Whether achievement is hidden (default: false)
-- `on_unlock` - Optional callback when unlocked
-
-**Returns:** `self` for chaining.
-
----
-
-### Updating Progress
-
-#### Progress(id, amount = 1)
-
-Adds progress to an achievement.
-
-```gml
-// Increment by 1
+// Progress achievements
 achievements.Progress("first_kill");
+achievements.Progress("slayer", 5);
+achievements.SetProgress("collector", 25);
 
-// Increment by specific amount
-achievements.Progress("goblin_slayer", 3);
-
-// Will auto-unlock when progress reaches goal
-achievements.Progress("collector", 1);
-```
-
-**Returns:** `self` for chaining.
-
----
-
-#### Unlock(id)
-
-Manually unlocks an achievement.
-
-```gml
+// Unlock achievement
 achievements.Unlock("special_event");
-```
 
-**Returns:** `self` for chaining.
+// Query achievements
+if (achievements.IsUnlocked("first_kill")) { }
+var progress = achievements.GetProgress("slayer");  // 0-1
 
----
-
-### Querying Achievements
-
-#### IsUnlocked(id)
-
-Checks if an achievement is unlocked.
-
-```gml
-if (achievements.IsUnlocked("goblin_slayer")) {
-    // Player has this achievement
-}
-```
-
-**Returns:** `true` if unlocked.
-
----
-
-#### GetProgress(id)
-
-Gets the current progress ratio (0-1).
-
-```gml
-var progress = achievements.GetProgress("goblin_slayer");
-draw_sprite_ext(spr_progress_bar, 0, x, y, progress, 1, 0, c_white, 1);
-```
-
-**Returns:** Float between 0.0 and 1.0.
-
----
-
-#### GetAll()
-
-Gets all achievements with their progress.
-
-```gml
+// Get all achievements
 var all = achievements.GetAll();
-var keys = variable_struct_get_names(all);
-for (var i = 0; i < array_length(keys); i++) {
-    var ach = all[$ keys[i]];
-    show_debug_message($"{keys[i]}: {ach.progress} - Unlocked: {ach.unlocked}");
-}
-```
+var unlocked = achievements.GetUnlocked();
+var byCategory = achievements.GetByCategory("Combat");
 
-**Returns:** Struct with achievement data.
+// Statistics
+achievements.IncrementStat("enemies_killed");
+achievements.IncrementStat("items_collected", 5);
+var kills = achievements.GetStat("enemies_killed");
 
----
-
-#### GetStats()
-
-Gets achievement statistics.
-
-```gml
+// Get stats
 var stats = achievements.GetStats();
-show_debug_message($"Total: {stats.total}");
-show_debug_message($"Unlocked: {stats.unlocked}");
-show_debug_message($"Percent: {stats.percent * 100}%");
-```
+// { total: 10, unlocked: 3, percent: 0.3, stats: {...} }
 
-**Returns:** Struct with `total`, `unlocked`, and `percent`.
+// Serialization
+var data = achievements.Serialize();
+achievements.Deserialize(data);
 
----
-
-### Save and Load
-
-#### LoadFromSave(save_data)
-
-Loads achievement progress from save data.
-
-```gml
-var save_data = File.LoadJSON("save.json");
-if (save_data != undefined && save_data.achievements != undefined) {
-    achievements.LoadFromSave(save_data.achievements);
-}
-```
-
-**Returns:** `self` for chaining.
-
----
-
-#### Reset()
-
-Resets all achievements to initial state.
-
-```gml
+// Reset and cleanup
 achievements.Reset();
+achievements.ResetStats();
+achievements.Free();
 ```
-
-**Returns:** `self` for chaining.
 
 ---
 
-#### Free()
+## Built-in Game Systems
 
-Cleans up the achievement manager.
+### SimplePlayer
+
+Basic player stats for the quest system.
 
 ```gml
-achievements.Free();
+new SimplePlayer()
+```
+
+```gml
+var player = new SimplePlayer();
+
+// Position
+player.SetPosition(100, 200);
+
+// Level and experience
+var level = player.GetLevel();
+player.AddExperience(50);
+player.SetLevel(5);
+var progress = player.GetExpProgress();  // 0-1
+
+// Skill points
+player.AddSkillPoint(1);
+if (player.SpendSkillPoint()) { }
+var sp = player.GetSkillPoints();
+
+// Callbacks
+player.onLevelUp = function(oldLevel, newLevel) {
+    show_message($"Level Up! {oldLevel} -> {newLevel}");
+};
+player.onExpGained = function(amount, currentExp, expToNext) {
+    show_debug_message($"+{amount} XP ({currentExp}/{expToNext})");
+};
+
+// Serialization
+var data = player.Serialize();
+player.Deserialize(data);
+```
+
+---
+
+### SimpleInventory
+
+Basic inventory system.
+
+```gml
+new SimpleInventory()
+```
+
+```gml
+var inventory = new SimpleInventory();
+
+// Configuration
+inventory.SetMaxSlots(50);
+inventory.SetMaxStackSize(99);
+
+// Item management
+inventory.AddItem("potion", 5);
+inventory.RemoveItem("potion", 1);
+inventory.SetItem("key", 1);
+
+// Queries
+if (inventory.HasItem("potion", 3)) { }
+var count = inventory.GetItemCount("potion");
+var allItems = inventory.GetAllItems();
+var types = inventory.GetItemCount();
+var total = inventory.GetTotalItemCount();
+
+if (inventory.IsFull()) { }
+
+// Callbacks
+inventory.onItemAdded = function(itemId, count, totalCount) {
+    show_debug_message($"Added {count} {itemId} (Total: {totalCount})");
+};
+inventory.onItemRemoved = function(itemId, count, totalCount) {
+    show_debug_message($"Removed {count} {itemId} (Remaining: {totalCount})");
+};
+inventory.onInventoryFull = function(itemId, count) {
+    show_message("Inventory full!");
+};
+
+// Serialization
+var data = inventory.Serialize();
+inventory.Deserialize(data);
+
+// Cleanup
+inventory.Clear();
+inventory.Free();
+```
+
+---
+
+### SimpleCurrency
+
+Basic currency system supporting multiple currencies.
+
+```gml
+new SimpleCurrency()
+```
+
+```gml
+var currency = new SimpleCurrency();
+
+// Configuration
+currency.SetDefaultCurrency("gold");
+
+// Currency management
+currency.Add(100, "gold");
+currency.Add(5, "gems");
+currency.Spend(50, "gold");
+currency.Set(1000, "gold");
+
+// Queries
+var gold = currency.Get("gold");
+var gems = currency.Get("gems");
+if (currency.Has(100, "gold")) { }
+
+var all = currency.GetAll();
+var types = currency.GetCurrencyTypes();
+
+// Callbacks
+currency.onCurrencyChanged = function(currencyId, oldAmount, newAmount, delta) {
+    show_debug_message($"{currencyId}: {oldAmount} -> {newAmount} ({delta:+0;-0})");
+};
+
+// Serialization
+var data = currency.Serialize();
+currency.Deserialize(data);
+
+// Cleanup
+currency.Clear();
+currency.Free();
 ```
 
 ---
 
 ## Complete Examples
 
-### Example 1: Simple Quest System Setup
+### Example 1: Full Game Setup
 
 ```gml
-// Create Event - Setup quest system
-global.quest_manager = new QuestManager();
-global.quest_tracker = new QuestTracker();
+// Create Event - Initialize everything
+globalvar Game;
+Game = new GameContext();
+Game.InitializeDefaults();
+
+// Set up callbacks
+Game.onRewardGiven = function(type, value, id) {
+    show_debug_message($"Reward: {type} - {value} {id}");
+};
+
+Game.onQuestStateChanged = function(quest, oldState, newState) {
+    if (newState == QUEST_STATE.COMPLETED) {
+        show_message($"Quest Complete: {quest.name}");
+    }
+};
+
+Game.onAchievementUnlocked = function(achievementId) {
+    var ach = Game.achievementManager.achievements[? achievementId];
+    show_message($"Achievement Unlocked: {ach.name}");
+};
+
+// Define game flags
+enum GAME_FLAG {
+    TUTORIAL_COMPLETE      = 1 << 0,
+    MET_BLACKSMITH         = 1 << 1,
+    FOUND_ANCIENT_SWORD    = 1 << 2,
+    DEFEATED_BOSS          = 1 << 3
+}
 
 // Create quest templates
-function CreateQuestTemplates() {
-    // Kill quest template
-    var kill_template = new Quest(
-        "Exterminator",
-        "Eliminate the threat.",
-        undefined,
-        undefined
-    );
-    kill_template.AddTask(new Task("kill_enemies", 5));
-    global.quest_manager.AddTemplate(kill_template);
+function CreateQuests() {
+    var quest = new Quest("The Lost Sword", "Find the ancient sword");
+    quest.SetId("lost_sword")
+        .SetType(QUEST_TYPE.MAIN)
+        .RequireLevel(5)
+        .RequireFlag(GAME_FLAG.MET_BLACKSMITH)
+        .AddKillObjective("kill_wolves", "enemy_wolf", "Defeat 5 Wolves", 5)
+        .AddCollectObjective("find_sword", "item_ancient_sword", "Find the Ancient Sword", 1)
+        .AddReward(REWARD_TYPE.EXPERIENCE, 1000)
+        .AddReward(REWARD_TYPE.CURRENCY, 500, "gold")
+        .AddReward(REWARD_TYPE.ITEM, 1, "item_steel_armor")
+        .SetNextQuest("blacksmith_reward");
     
-    // Collection quest template
-    var collect_template = new Quest(
-        "Gatherer",
-        "Collect the required items.",
-        undefined,
-        undefined
-    );
-    collect_template.AddTask(new Task("collect_items", 10));
-    global.quest_manager.AddTemplate(collect_template);
-    
-    // Multi-task quest template
-    var rescue_template = new Quest(
-        "Rescue Mission",
-        "Save the villagers and defeat the bandits.",
-        function(q) {
-            player.reputation += 50;
-            show_message("You saved the village!");
-        },
-        function(q) {
-            player.reputation -= 20;
-            show_message("You failed to save the village...");
-        }
-    );
-    rescue_template.AddTask(new Task("rescue_villagers", 3));
-    rescue_template.AddTask(new Task("defeat_bandit_leader", 1));
-    rescue_template.AddTask(new Task("recover_stolen_goods", 5));
-    global.quest_manager.AddTemplate(rescue_template);
+    Game.questManager.RegisterTemplate(quest);
 }
 
-// Accept quest from NPC
-function AcceptQuest(template_id) {
-    var quest = global.quest_manager.SpawnQuest(template_id);
-    quest.Start();
-    global.quest_tracker.AddQuest(quest);
-    return quest;
+// Create achievements
+function CreateAchievements() {
+    Game.achievementManager.Add("first_kill", "First Blood", "Defeat an enemy", 1);
+    Game.achievementManager.Add("wolf_slayer", "Wolf Slayer", "Defeat 10 wolves", 10);
+    Game.achievementManager.Add("sword_master", "Sword Master", "Find the ancient sword", 1, true);
 }
 
-// Step Event - Update quests
-global.quest_tracker.Update();
+CreateQuests();
+CreateAchievements();
 
-// Track quest progress
-function OnEnemyKilled(enemy_type) {
-    var active_quests = global.quest_tracker.GetActiveQuests();
-    for (var i = 0; i < array_length(active_quests); i++) {
-        var task = active_quests[i].tasks.GetTask("kill_enemies");
-        if (task != undefined) {
-            task.AddProgress();
-        }
-        
-        if (enemy_type == "bandit_leader") {
-            var leader_task = active_quests[i].tasks.GetTask("defeat_bandit_leader");
-            if (leader_task != undefined) {
-                leader_task.AddProgress();
+// Step Event - Update
+Game.Update(1 / game_get_speed(gamespeed_fps));
+
+// Cleanup Event
+Game.Free();
+```
+
+---
+
+### Example 2: Quest Giver NPC
+
+```gml
+// NPC Create Event
+questId = "lost_sword";
+state = "idle";
+
+// NPC Step Event
+var quest = Game.questTracker.GetQuest(questId);
+
+if (quest == undefined) {
+    // Quest not yet spawned - spawn it
+    var spawned = Game.questManager.SpawnQuest(questId);
+    Game.questTracker.AddQuest(spawned);
+    quest = spawned;
+}
+
+switch (quest.state) {
+    case QUEST_STATE.AVAILABLE:
+        if (place_meeting(x, y, obj_player) && keyboard_check_pressed(vk_space)) {
+            if (quest.CanAccept(Game)) {
+                Game.questTracker.AcceptQuest(questId, Game);
+                show_message($"Quest Accepted: {quest.name}");
+            } else {
+                show_message("You don't meet the requirements.");
             }
         }
-    }
-}
-
-function OnItemCollected(item_type) {
-    var active_quests = global.quest_tracker.GetActiveQuests();
-    for (var i = 0; i < array_length(active_quests); i++) {
-        var task = active_quests[i].tasks.GetTask("collect_items");
-        if (task != undefined) {
-            task.AddProgress();
-        }
+        break;
         
-        if (item_type == "stolen_goods") {
-            var goods_task = active_quests[i].tasks.GetTask("recover_stolen_goods");
-            if (goods_task != undefined) {
-                goods_task.AddProgress();
+    case QUEST_STATE.ACTIVE:
+        if (place_meeting(x, y, obj_player) && keyboard_check_pressed(vk_space)) {
+            if (quest.IsComplete()) {
+                Game.questTracker.CompleteQuest(questId, Game);
+                show_message($"Quest Complete: {quest.name}");
+            } else {
+                var current = quest.GetCurrentObjective();
+                show_message($"Current objective: {current.GetDisplayText()}");
             }
         }
-    }
+        break;
+        
+    case QUEST_STATE.COMPLETED:
+        // Quest already turned in
+        break;
 }
 
-function OnVillagerRescued() {
-    var active_quests = global.quest_tracker.GetActiveQuests();
-    for (var i = 0; i < array_length(active_quests); i++) {
-        var task = active_quests[i].tasks.GetTask("rescue_villagers");
-        if (task != undefined) {
-            task.AddProgress();
-        }
+// NPC Draw Event
+draw_self();
+
+var quest = Game.questTracker.GetQuest(questId);
+if (quest != undefined) {
+    draw_set_color(c_white);
+    
+    if (quest.state == QUEST_STATE.AVAILABLE) {
+        draw_sprite(spr_exclamation, 0, x, y - 40);
+    } else if (quest.state == QUEST_STATE.ACTIVE && quest.IsComplete()) {
+        draw_sprite(spr_question, 0, x, y - 40);
     }
 }
 ```
 
-### Example 2: Quest UI Display
+---
+
+### Example 3: Quest Journal UI
 
 ```gml
 // Draw Event - Quest Journal
-function DrawQuestJournal(x, y) {
-    var active = global.quest_tracker.GetActiveQuests();
+function DrawQuestJournal(x, y, width, height) {
+    var active = Game.questTracker.GetActiveQuests();
     
+    draw_set_color(c_black);
+    draw_rectangle(x, y, x + width, y + height, false);
     draw_set_color(c_white);
-    draw_text(x, y, "=== ACTIVE QUESTS ===");
-    y += 30;
+    draw_rectangle(x, y, x + width, y + height, true);
+    
+    var textY = y + 10;
+    draw_text(x + 10, textY, "=== ACTIVE QUESTS ===");
+    textY += 30;
     
     for (var i = 0; i < array_length(active); i++) {
         var quest = active[i];
         
         // Quest title
         draw_set_color(c_yellow);
-        draw_text(x, y, quest.name);
-        y += 20;
+        draw_text(x + 10, textY, quest.name);
+        textY += 20;
         
-        // Quest description
-        draw_set_color(c_gray);
-        draw_text(x + 10, y, quest.description);
-        y += 20;
-        
-        // Tasks
-        var task_keys = ds_map_keys_to_array(quest.tasks.tasks);
-        for (var j = 0; j < array_length(task_keys); j++) {
-            var task = quest.tasks.GetTask(task_keys[j]);
-            var progress_text = $"{task.progress}/{task.goal}";
+        // Objectives
+        var objectives = quest.GetObjectiveSummaries();
+        for (var j = 0; j < array_length(objectives); j++) {
+            var obj = objectives[j];
             
-            if (task.IsComplete()) {
-                draw_set_color(c_green);
-                draw_text(x + 20, y, $"[✓] {task.id}: {progress_text}");
+            if (obj.hidden) {
+                draw_set_color(c_gray);
+                draw_text(x + 20, textY, "???");
             } else {
-                draw_set_color(c_white);
-                draw_text(x + 20, y, $"[ ] {task.id}: {progress_text}");
+                var color = obj.completed ? c_green : c_white;
+                draw_set_color(color);
+                
+                var text = $"[{obj.progress}/{obj.goal}] {obj.description}";
+                if (obj.optional) text += " (Optional)";
+                draw_text(x + 20, textY, text);
                 
                 // Progress bar
-                var bar_width = 100;
-                var progress_width = bar_width * task.GetProgressRatio();
-                draw_rectangle(x + 200, y, x + 200 + bar_width, y + 10, true);
-                draw_set_color(c_blue);
-                draw_rectangle(x + 200, y, x + 200 + progress_width, y + 10, false);
+                if (!obj.completed) {
+                    var barWidth = 100;
+                    var progressWidth = barWidth * (obj.progress / obj.goal);
+                    draw_set_color(c_gray);
+                    draw_rectangle(x + 200, textY, x + 200 + barWidth, textY + 10, true);
+                    draw_set_color(c_blue);
+                    draw_rectangle(x + 200, textY, x + 200 + progressWidth, textY + 10, false);
+                }
             }
-            y += 15;
+            textY += 15;
         }
         
-        y += 10;
+        textY += 10;
     }
     
     if (array_length(active) == 0) {
         draw_set_color(c_gray);
-        draw_text(x, y, "No active quests");
+        draw_text(x + 10, textY, "No active quests");
     }
 }
 ```
 
-### Example 3: Achievement System Integration
+---
 
-```gml
-// Create Event - Setup achievements
-global.achievements = new AchievementManager();
-
-function SetupAchievements() {
-    // Combat achievements
-    global.achievements.Add("first_blood", "First Blood", 1, false, OnAchievementUnlocked);
-    global.achievements.Add("slayer", "Slayer", 100, false, OnAchievementUnlocked);
-    global.achievements.Add("boss_slayer", "Boss Slayer", 10, false, OnAchievementUnlocked);
-    
-    // Collection achievements
-    global.achievements.Add("collector", "Collector", 50, false, OnAchievementUnlocked);
-    global.achievements.Add("completionist", "Completionist", 200, true, OnAchievementUnlocked);
-    
-    // Exploration achievements
-    global.achievements.Add("explorer", "Explorer", 20, false, OnAchievementUnlocked);
-    global.achievements.Add("secret_finder", "???", 5, true, function(id) {
-        show_message("Secret Achievement: Master Explorer!");
-        OnAchievementUnlocked(id);
-    });
-}
-
-function OnAchievementUnlocked(id) {
-    var ach = global.achievements.achievements[? id];
-    
-    // Show notification
-    var notification = instance_create_layer(0, 0, "UI", obj_achievement_popup);
-    notification.text = ach.name;
-    notification.icon = GetAchievementIcon(id);
-    
-    // Play sound
-    AudioManager.PlaySFX(snd_achievement);
-    
-    // Save progress
-    SaveGame();
-}
-
-// Track achievement progress
-function OnEnemyKilled() {
-    total_kills++;
-    global.achievements.Progress("first_blood");
-    global.achievements.Progress("slayer");
-}
-
-function OnBossKilled() {
-    global.achievements.Progress("boss_slayer");
-}
-
-function OnItemCollected() {
-    total_collected++;
-    global.achievements.Progress("collector");
-    global.achievements.Progress("completionist");
-}
-
-function OnAreaDiscovered() {
-    global.achievements.Progress("explorer");
-}
-
-function OnSecretFound() {
-    global.achievements.Progress("secret_finder");
-}
-
-// Achievement popup object
-// Create Event
-function AchievementPopup(_text, _icon) {
-    text = _text;
-    icon = _icon;
-    y = -50;
-    target_y = 10;
-    alpha = 0;
-    timer = 180;
-}
-
-// Step Event
-y = lerp(y, target_y, 0.2);
-alpha = min(alpha + 0.05, 1);
-timer--;
-
-if (timer <= 0) {
-    target_y = -50;
-    if (y <= -40) {
-        instance_destroy();
-    }
-}
-
-// Draw Event
-draw_set_alpha(alpha);
-draw_set_color(c_black);
-draw_rectangle(100, y, 500, y + 40, false);
-draw_set_color(c_gold);
-draw_rectangle(100, y, 500, y + 40, true);
-
-if (icon != -1) {
-    draw_sprite(icon, 0, 110, y + 5);
-}
-
-draw_set_color(c_white);
-draw_set_font(fnt_achievement);
-draw_text(150, y + 10, "Achievement Unlocked!");
-draw_text(150, y + 25, text);
-
-draw_set_alpha(1);
-```
-
-### Example 4: Save/Load Integration
+### Example 4: Save/Load System
 
 ```gml
 function SaveGame(slot) {
-    var save_data = {
+    var saveData = {
         version: "1.0",
         timestamp: GetUnixDateTime(date_current_datetime()),
-        player: {
-            name: player_name,
-            level: player_level,
-            xp: player_xp,
-            position: { x: obj_player.x, y: obj_player.y }
-        },
-        quests: SerializeQuests(),
-        achievements: global.achievements.GetAll()
+        context: Game.Serialize(),
+        player: Game.player.Serialize(),
+        inventory: Game.inventory.Serialize(),
+        currency: Game.currency.Serialize(),
+        questTracker: Game.questTracker.Serialize(),
+        achievements: Game.achievementManager.Serialize()
     };
     
-    return File.SaveJSON($"save_slot_{slot}.json", save_data);
-}
-
-function SerializeQuests() {
-    var quest_data = {
-        active: [],
-        completed: []
-    };
-    
-    // Serialize active quests
-    var active = global.quest_tracker.GetActiveQuests();
-    for (var i = 0; i < array_length(active); i++) {
-        var q = active[i];
-        var serialized = {
-            id: q.id,
-            template_id: q.template_id,
-            state: q.state,
-            tasks: {}
-        };
-        
-        var task_keys = ds_map_keys_to_array(q.tasks.tasks);
-        for (var j = 0; j < array_length(task_keys); j++) {
-            var task = q.tasks.GetTask(task_keys[j]);
-            serialized.tasks[$ task.id] = {
-                state: task.state,
-                progress: task.progress
-            };
-        }
-        
-        array_push(quest_data.active, serialized);
-    }
-    
-    // Serialize completed quests
-    var completed = global.quest_tracker.GetCompletedQuests();
-    for (var i = 0; i < array_length(completed); i++) {
-        array_push(quest_data.completed, completed[i].id);
-    }
-    
-    return quest_data;
+    return File.SaveJSON($"save_slot_{slot}.json", saveData);
 }
 
 function LoadGame(slot) {
-    var save_data = File.LoadJSON($"save_slot_{slot}.json");
-    if (save_data == undefined) return false;
+    var saveData = File.LoadJSON($"save_slot_{slot}.json");
+    if (saveData == undefined) return false;
     
-    // Load player data
-    player_name = save_data.player.name;
-    player_level = save_data.player.level;
-    player_xp = save_data.player.xp;
-    obj_player.x = save_data.player.position.x;
-    obj_player.y = save_data.player.position.y;
-    
-    // Load achievements
-    global.achievements.LoadFromSave(save_data.achievements);
-    
-    // Load quests
-    DeserializeQuests(save_data.quests);
+    Game.Deserialize(saveData.context);
+    Game.player.Deserialize(saveData.player);
+    Game.inventory.Deserialize(saveData.inventory);
+    Game.currency.Deserialize(saveData.currency);
+    Game.questTracker.Deserialize(saveData.questTracker, Game.questManager);
+    Game.achievementManager.Deserialize(saveData.achievements);
     
     return true;
 }
 
-function DeserializeQuests(quest_data) {
-    global.quest_tracker.Clear();
-    
-    // Restore active quests
-    for (var i = 0; i < array_length(quest_data.active); i++) {
-        var q_data = quest_data.active[i];
-        var template = global.quest_manager.GetTemplate(q_data.template_id);
-        
-        if (template != undefined) {
-            var quest = global.quest_manager.SpawnQuest(q_data.template_id);
-            quest.id = q_data.id;
-            quest.state = q_data.state;
-            
-            // Restore task progress
-            var task_keys = variable_struct_get_names(q_data.tasks);
-            for (var j = 0; j < array_length(task_keys); j++) {
-                var task_data = q_data.tasks[$ task_keys[j]];
-                var task = quest.tasks.GetTask(task_keys[j]);
-                if (task != undefined) {
-                    task.state = task_data.state;
-                    task.progress = task_data.progress;
-                }
-            }
-            
-            global.quest_tracker.AddQuest(quest);
+function GetSaveSlots() {
+    var slots = [];
+    for (var i = 0; i < 10; i++) {
+        if (file_exists($"save_slot_{i}.json")) {
+            var data = File.LoadJSON($"save_slot_{i}.json");
+            array_push(slots, {
+                slot: i,
+                timestamp: data.timestamp,
+                playerLevel: data.player.level
+            });
         }
     }
+    return slots;
 }
 ```
+
+---
 
 ### Example 5: Daily Quest System
 
 ```gml
 function DailyQuestManager() constructor {
-    daily_quests = [];
-    last_refresh = 0;
-    refresh_interval = 86400; // 24 hours in seconds
+    dailyQuests = [];
+    lastRefresh = 0;
+    refreshInterval = 86400; // 24 hours
     
-    var templates = [
-        "daily_kills",
-        "daily_collection",
-        "daily_exploration"
-    ];
+    templates = ["daily_kills", "daily_collection", "daily_crafting"];
     
     function CheckRefresh() {
-        var current_time = GetUnixDateTime(date_current_datetime());
+        var currentTime = GetUnixDateTime(date_current_datetime());
         
-        if (current_time - last_refresh >= refresh_interval) {
-            RefreshDailyQuests();
-            last_refresh = current_time;
+        if (currentTime - lastRefresh >= refreshInterval) {
+            Refresh();
+            lastRefresh = currentTime;
         }
     }
     
-    function RefreshDailyQuests() {
-        // Clear old daily quests
-        for (var i = 0; i < array_length(daily_quests); i++) {
-            global.quest_tracker.RemoveQuest(daily_quests[i].id);
+    function Refresh() {
+        // Clear old quests
+        for (var i = 0; i < array_length(dailyQuests); i++) {
+            Game.questTracker.RemoveQuest(dailyQuests[i].id);
         }
-        daily_quests = [];
+        dailyQuests = [];
         
-        // Generate new daily quests
-        var num_quests = 3;
-        for (var i = 0; i < num_quests; i++) {
-            var template_id = templates[irandom(array_length(templates) - 1)];
-            var quest = global.quest_manager.SpawnQuest(template_id,
-                function(q) {
-                    // Daily quest reward
-                    player.gold += 100;
-                    player.xp += 50;
-                    show_message($"Daily quest complete! +100 gold, +50 XP");
-                }
-            );
+        // Generate new quests
+        var count = 3;
+        for (var i = 0; i < count; i++) {
+            var templateId = templates[irandom(array_length(templates) - 1)];
+            var quest = Game.questManager.SpawnQuest(templateId);
             
-            quest.Start();
-            global.quest_tracker.AddQuest(quest);
-            array_push(daily_quests, quest);
+            quest.SetType(QUEST_TYPE.DAILY);
+            quest.onComplete = function(q) {
+                Game.AddCurrency(100, "gold");
+                Game.AddExperience(50);
+                show_message("Daily quest complete! +100 gold, +50 XP");
+            };
+            
+            Game.questTracker.AddQuest(quest);
+            quest.Accept(Game);
+            array_push(dailyQuests, quest);
         }
     }
     
-    function GetTimeUntilRefresh() {
-        var current_time = GetUnixDateTime(date_current_datetime());
-        return max(0, refresh_interval - (current_time - last_refresh));
+    function GetTimeRemaining() {
+        var currentTime = GetUnixDateTime(date_current_datetime());
+        return max(0, refreshInterval - (currentTime - lastRefresh));
     }
     
-    function FormatTimeRemaining(seconds) {
+    function FormatTime(seconds) {
         var hours = floor(seconds / 3600);
         var minutes = floor((seconds % 3600) / 60);
         return $"{hours}h {minutes}m";
@@ -1248,19 +1714,20 @@ function DailyQuestManager() constructor {
     
     return {
         CheckRefresh: CheckRefresh,
-        RefreshDailyQuests: RefreshDailyQuests,
-        GetTimeUntilRefresh: GetTimeUntilRefresh,
-        FormatTimeRemaining: FormatTimeRemaining
+        Refresh: Refresh,
+        GetTimeRemaining: GetTimeRemaining,
+        FormatTime: FormatTime
     };
 }
 
 // Usage
-var daily_manager = new DailyQuestManager();
+globalvar DailyQuests;
+DailyQuests = new DailyQuestManager();
 
 // In Step event
-daily_manager.CheckRefresh();
+DailyQuests.CheckRefresh();
 
-// Display time until refresh
-var time_left = daily_manager.GetTimeUntilRefresh();
-draw_text(10, 10, $"Daily quests refresh in: {daily_manager.FormatTimeRemaining(time_left)}");
+// Display time
+var remaining = DailyQuests.GetTimeRemaining();
+draw_text(10, 10, $"Daily reset in: {DailyQuests.FormatTime(remaining)}");
 ```
