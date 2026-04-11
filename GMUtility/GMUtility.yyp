@@ -47,6 +47,7 @@
     {"id":{"name":"oPlayer","path":"objects/oPlayer/oPlayer.yy",},},
     {"id":{"name":"oTest","path":"objects/oTest/oTest.yy",},},
     {"id":{"name":"rTest","path":"rooms/rTest/rTest.yy",},},
+    {"id":{"name":"GMU_Audio","path":"scripts/GMU_Audio/GMU_Audio.yy",},},
     {"id":{"name":"GMU_Command","path":"scripts/GMU_Command/GMU_Command.yy",},},
     {"id":{"name":"GMU_Core","path":"scripts/GMU_Core/GMU_Core.yy",},},
     {"id":{"name":"GMU_DS","path":"scripts/GMU_DS/GMU_DS.yy",},},

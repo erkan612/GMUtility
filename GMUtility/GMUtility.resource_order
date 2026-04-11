@@ -27,6 +27,7 @@
     {"name":"oBlock","order":4,"path":"objects/oBlock/oBlock.yy",},
     {"name":"oTest","order":1,"path":"objects/oTest/oTest.yy",},
     {"name":"rTest","order":1,"path":"rooms/rTest/rTest.yy",},
+    {"name":"GMU_Audio","order":10,"path":"scripts/GMU_Audio/GMU_Audio.yy",},
     {"name":"GMU_Command","order":7,"path":"scripts/GMU_Command/GMU_Command.yy",},
     {"name":"GMU_Core","order":1,"path":"scripts/GMU_Core/GMU_Core.yy",},
     {"name":"GMU_DS","order":2,"path":"scripts/GMU_DS/GMU_DS.yy",},
