@@ -5,8 +5,8 @@
   "isDnD":false,
   "name":"GMU_Audio",
   "parent":{
-    "name":"KISMET",
-    "path":"folders/KISMET.yy",
+    "name":"GMU",
+    "path":"folders/GMU.yy",
   },
   "resourceType":"GMScript",
   "resourceVersion":"2.0",
